@@ -1,0 +1,16 @@
+# Boulga AI backend — dependances pinnees (derniere version stable au 2026-07-11)
+fastapi==0.139.0
+uvicorn[standard]==0.51.0
+pydantic==2.13.4
+pydantic-settings==2.14.2
+python-dotenv==1.2.2
+supabase==2.31.0
+httpx==0.28.1
+python-docx==1.1.2
+python-multipart==0.0.32
+pypdf==6.14.2
+openpyxl==3.1.5
+python-pptx==1.0.2
+Pillow==12.3.0
+sse-starlette==3.4.5
+python-jose[cryptography]==3.5.0

@@ -1,0 +1,6 @@
+# Etat local Claude Code (specifique a la machine, pas au projet)
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db

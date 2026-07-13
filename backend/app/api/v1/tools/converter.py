@@ -1,0 +1,126 @@
+import tempfile
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+
+from app.core.file_converter.converter import (
+    ConversionError,
+    convert,
+    merge_pdfs,
+    new_temp_filename,
+    split_pdf,
+    validate_upload,
+)
+from app.dependencies import get_current_user
+from app.utils.storage import create_signed_url, upload_file
+
+router = APIRouter(prefix="/tools/converter", tags=["converter"])
+
+TEMP_BUCKET = "temp"
+SIGNED_URL_TTL = 24 * 60 * 60  # 24h
+
+
+async def _read_and_validate(file: UploadFile) -> tuple[bytes, str]:
+    content = await file.read()
+    ext = validate_upload(file.filename or "fichier", file.content_type, len(content))
+    return content, ext
+
+
+def _publish(user_id: str, local_path: Path) -> dict:
+    target_name = new_temp_filename(local_path.suffix.lstrip("."))
+    storage_path = f"{user_id}/{target_name}"
+    upload_file(TEMP_BUCKET, storage_path, local_path.read_bytes(), "application/octet-stream")
+    url = create_signed_url(TEMP_BUCKET, storage_path, SIGNED_URL_TTL)
+    return {"url": url, "filename": local_path.name}
+
+
+@router.post("/convert")
+async def convert_file(
+    file: UploadFile,
+    output_format: str,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    try:
+        content, ext = await _read_and_validate(file)
+    except ConversionError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        input_path = tmp_path / f"input.{ext}"
+        input_path.write_bytes(content)
+
+        try:
+            output_path = convert(input_path, output_format, tmp_path)
+        except ConversionError as exc:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+        return _publish(user["user_id"], output_path)
+
+
+@router.post("/merge")
+async def merge_files(
+    files: list[UploadFile],
+    user: dict = Depends(get_current_user),
+) -> dict:
+    if len(files) < 2:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Au moins deux fichiers PDF sont necessaires pour une fusion.",
+        )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        input_paths = []
+        for i, file in enumerate(files):
+            try:
+                content, ext = await _read_and_validate(file)
+            except ConversionError as exc:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+            if ext != "pdf":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Seuls des fichiers PDF peuvent etre fusionnes.",
+                )
+            input_path = tmp_path / f"input_{i}.pdf"
+            input_path.write_bytes(content)
+            input_paths.append(input_path)
+
+        output_path = tmp_path / "fusion.pdf"
+        try:
+            merge_pdfs(input_paths, output_path)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Echec de la fusion : {exc}"
+            )
+
+        return _publish(user["user_id"], output_path)
+
+
+@router.post("/split")
+async def split_file(
+    file: UploadFile,
+    pages: str,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    try:
+        content, ext = await _read_and_validate(file)
+    except ConversionError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    if ext != "pdf":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Seul un fichier PDF peut etre separe."
+        )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        input_path = tmp_path / "input.pdf"
+        input_path.write_bytes(content)
+        output_path = tmp_path / "extrait.pdf"
+
+        try:
+            split_pdf(input_path, pages, output_path)
+        except ConversionError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+        return _publish(user["user_id"], output_path)
