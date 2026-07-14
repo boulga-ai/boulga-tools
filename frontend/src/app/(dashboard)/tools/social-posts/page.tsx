@@ -1,24 +1,32 @@
 "use client";
 
 import { useState } from "react";
-import { toast } from "sonner";
 import {
   Share2,
-  Copy,
   RotateCcw,
+  ChevronRight,
   Briefcase,
   ThumbsUp,
   X as XIcon,
   Camera,
   MessageCircle,
   Music2,
+  Square,
 } from "lucide-react";
 import { ToolLayout } from "@/components/tools/ToolLayout";
 import { StreamingOutput } from "@/components/tools/StreamingOutput";
+import { CopyButton } from "@/components/tools/CopyButton";
+import { GenerationError } from "@/components/tools/GenerationError";
+import { RefineBar } from "@/components/tools/RefineBar";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   Select,
   SelectContent,
@@ -27,19 +35,20 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useStreaming } from "@/hooks/useStreaming";
+import { cn } from "@/lib/utils";
 
 const PLATFORMS = [
-  { value: "linkedin", label: "LinkedIn", icon: Briefcase },
   { value: "facebook", label: "Facebook", icon: ThumbsUp },
-  { value: "twitter", label: "X (Twitter)", icon: XIcon },
+  { value: "whatsapp", label: "WhatsApp", icon: MessageCircle },
   { value: "instagram", label: "Instagram", icon: Camera },
-  { value: "whatsapp", label: "WhatsApp Status", icon: MessageCircle },
+  { value: "linkedin", label: "LinkedIn", icon: Briefcase },
+  { value: "twitter", label: "X (Twitter)", icon: XIcon },
   { value: "tiktok", label: "TikTok", icon: Music2 },
 ];
 
 const TONES = [
+  { value: "Convivial", label: "Convivial" },
   { value: "Professionnel", label: "Professionnel" },
-  { value: "Decontracte", label: "Decontracte" },
   { value: "Inspirant", label: "Inspirant" },
   { value: "Humoristique", label: "Humoristique" },
   { value: "Informatif", label: "Informatif" },
@@ -47,38 +56,47 @@ const TONES = [
 ];
 
 export default function SocialPostsPage() {
-  const [subject, setSubject] = useState("");
-  const [platform, setPlatform] = useState("linkedin");
-  const [tone, setTone] = useState("Professionnel");
+  const [description, setDescription] = useState("");
+  const [platform, setPlatform] = useState("facebook");
+  const [tone, setTone] = useState("Convivial");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [audience, setAudience] = useState("");
-  const [keyMessage, setKeyMessage] = useState("");
+  const [keywords, setKeywords] = useState("");
   const [cta, setCta] = useState("");
-  const { text: output, isStreaming, error, start } = useStreaming();
+  const { text: output, isStreaming, error, isQuotaError, start, stop } = useStreaming();
 
-  const canSubmit = subject.trim() && audience.trim() && keyMessage.trim();
+  const canSubmit = description.trim().length > 0;
 
   async function handleSubmit(overridePlatform?: string) {
     if (!canSubmit) return;
     await start("/api/v1/tools/transformers/social-posts", {
-      subject,
+      description,
       platform: overridePlatform ?? platform,
       tone,
-      target_audience: audience,
-      key_message: keyMessage,
+      target_audience: audience || undefined,
+      keywords: keywords || undefined,
       call_to_action: cta || undefined,
     });
   }
 
-  function handleCopy() {
-    if (!output) return;
-    navigator.clipboard.writeText(output);
-    toast.success("Post copie");
+  async function handleRefine(instruction: string) {
+    if (!canSubmit) return;
+    await start("/api/v1/tools/transformers/social-posts", {
+      description,
+      platform,
+      tone,
+      target_audience: audience || undefined,
+      keywords: keywords || undefined,
+      call_to_action: cta || undefined,
+      previous_output: output,
+      refine_instruction: instruction,
+    });
   }
 
   return (
     <ToolLayout
-      title="Posts reseaux sociaux"
-      description="Genere des publications adaptees a chaque reseau social."
+      title="Posts réseaux sociaux"
+      description="Génère des publications adaptées à chaque réseau social."
       badge={
         <span className="w-fit rounded-[4px] bg-succes/10 px-2 py-0.5 text-xs font-medium text-succes">
           Gratuit
@@ -88,18 +106,18 @@ export default function SocialPostsPage() {
       <div className="grid flex-1 grid-cols-1 gap-4 md:grid-cols-2">
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="subject">Sujet / theme du post</Label>
+            <Label htmlFor="description">Que voulez-vous publier ?</Label>
             <Textarea
-              id="subject"
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              placeholder="Promotion, annonce, actualite..."
-              className="min-h-20"
+              id="description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Ex : On lance notre nouveau service de livraison à Ouagadougou, tarif spécial la première semaine..."
+              className="min-h-28"
             />
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label>Plateforme cible</Label>
+            <Label>Plateforme</Label>
             <Select value={platform} onValueChange={(value) => value && setPlatform(value)}>
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Plateforme" />
@@ -131,62 +149,79 @@ export default function SocialPostsPage() {
             </Select>
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="audience">Audience cible</Label>
-            <Input
-              id="audience"
-              value={audience}
-              onChange={(e) => setAudience(e.target.value)}
-              placeholder="etudiants, entrepreneurs, recruteurs..."
-            />
-          </div>
+          <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+            <CollapsibleTrigger className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+              <ChevronRight className={cn("size-3.5 transition-transform", advancedOpen && "rotate-90")} />
+              Options avancées
+            </CollapsibleTrigger>
+            <CollapsibleContent className="flex flex-col gap-3 pt-3">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="audience">Audience cible (optionnel)</Label>
+                <Input
+                  id="audience"
+                  value={audience}
+                  onChange={(e) => setAudience(e.target.value)}
+                  placeholder="étudiants, entrepreneurs, recruteurs..."
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="keywords">Hashtags ou mots-clés souhaités (optionnel)</Label>
+                <Input
+                  id="keywords"
+                  value={keywords}
+                  onChange={(e) => setKeywords(e.target.value)}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="cta">Appel à l&apos;action souhaité (optionnel)</Label>
+                <Input
+                  id="cta"
+                  value={cta}
+                  onChange={(e) => setCta(e.target.value)}
+                  placeholder="Commentez, visitez notre site..."
+                />
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="keyMessage">Message cle</Label>
-            <Textarea
-              id="keyMessage"
-              value={keyMessage}
-              onChange={(e) => setKeyMessage(e.target.value)}
-              placeholder="Le point principal a faire passer..."
-              className="min-h-20"
-            />
+          <div className="flex items-center gap-2">
+            <Button onClick={() => handleSubmit()} disabled={isStreaming || !canSubmit} className="w-fit">
+              <Share2 className="size-4" />
+              {isStreaming ? "Génération en cours..." : "Générer le post"}
+            </Button>
+            {isStreaming && (
+              <Button variant="outline" onClick={stop} className="w-fit">
+                <Square className="size-4" />
+                Arrêter
+              </Button>
+            )}
           </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="cta">Appel a l&apos;action (optionnel)</Label>
-            <Input
-              id="cta"
-              value={cta}
-              onChange={(e) => setCta(e.target.value)}
-              placeholder="Commentez, visitez notre site..."
-            />
-          </div>
-
-          <Button onClick={() => handleSubmit()} disabled={isStreaming || !canSubmit} className="w-fit">
-            <Share2 className="size-4" />
-            {isStreaming ? "Generation en cours..." : "Generer le post"}
-          </Button>
         </div>
 
         <div className="flex flex-col gap-3">
           <StreamingOutput text={output} isStreaming={isStreaming} />
-          {error && <p className="text-sm text-erreur">{error}</p>}
+          {output && (
+            <p className="text-xs text-muted-foreground">
+              {output.length.toLocaleString("fr-FR")} caractères
+              {platform === "twitter" && output.length > 280 && (
+                <span className="ml-1 text-attention">(dépasse la limite X/Twitter de 280)</span>
+              )}
+            </p>
+          )}
+          {error && <GenerationError message={error} isQuotaError={isQuotaError} onRetry={() => handleSubmit()} />}
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={handleCopy} disabled={!output}>
-              <Copy className="size-4" />
-              Copier
-            </Button>
+            <CopyButton text={output} disabled={isStreaming} />
             <Button variant="outline" onClick={() => handleSubmit()} disabled={isStreaming || !canSubmit}>
               <RotateCcw className="size-4" />
-              Regenerer
+              Régénérer
             </Button>
             <Select
               value={undefined}
-              onValueChange={(value) => value && handleSubmit(value)}
+              onValueChange={(value) => typeof value === "string" && handleSubmit(value)}
               disabled={isStreaming || !canSubmit}
             >
               <SelectTrigger className="w-fit">
-                <SelectValue placeholder="Adapter pour un autre reseau" />
+                <SelectValue placeholder="Adapter pour un autre réseau" />
               </SelectTrigger>
               <SelectContent>
                 {PLATFORMS.filter((p) => p.value !== platform).map((p) => (
@@ -198,6 +233,13 @@ export default function SocialPostsPage() {
               </SelectContent>
             </Select>
           </div>
+          {output && !isStreaming && (
+            <RefineBar
+              presets={["Plus court", "Plus long", "Plus percutant", "Ajoute des emojis"]}
+              onRefine={handleRefine}
+              disabled={isStreaming}
+            />
+          )}
         </div>
       </div>
     </ToolLayout>

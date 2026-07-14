@@ -15,22 +15,26 @@ class ReformulatorRequest(BaseModel):
 
 
 class EmailWriterRequest(BaseModel):
-    context: str = Field(min_length=1, max_length=5_000)
-    recipient: str = Field(min_length=1, max_length=200)
-    objective: str = Field(min_length=1, max_length=2_000)
+    description: str = Field(min_length=1, max_length=5_000)
     tone: str | None = None
+    subject: str | None = None
+    extra_details: str | None = Field(default=None, max_length=2_000)
+    previous_output: str | None = Field(default=None, max_length=10_000)
+    refine_instruction: str | None = Field(default=None, max_length=500)
 
 
 SocialPlatform = Literal["linkedin", "facebook", "twitter", "instagram", "whatsapp", "tiktok"]
 
 
 class SocialPostRequest(BaseModel):
-    subject: str = Field(min_length=1, max_length=2_000)
+    description: str = Field(min_length=1, max_length=2_000)
     platform: SocialPlatform
-    tone: str
-    target_audience: str = Field(min_length=1, max_length=500)
-    key_message: str = Field(min_length=1, max_length=2_000)
+    tone: str | None = None
+    target_audience: str | None = Field(default=None, max_length=500)
+    keywords: str | None = Field(default=None, max_length=500)
     call_to_action: str | None = None
+    previous_output: str | None = Field(default=None, max_length=10_000)
+    refine_instruction: str | None = Field(default=None, max_length=500)
 
 
 class ChatRequest(BaseModel):
@@ -38,23 +42,15 @@ class ChatRequest(BaseModel):
     conversation_id: str | None = None
 
 
-SpeechType = Literal[
-    "pitch_elevator",
-    "pitch_investor",
-    "pitch_commercial",
-    "formal",
-    "professional",
-    "motivation",
-    "toast",
-    "soutenance",
-]
+SpeechType = Literal["pitch_commercial", "soutenance", "ceremoniel", "prise_parole"]
 
 
 class SpeechRequest(BaseModel):
     speech_type: SpeechType
-    context: str = Field(min_length=1, max_length=3_000)
-    audience: str = Field(min_length=1, max_length=500)
-    key_points: str = Field(min_length=1, max_length=5_000)
+    description: str = Field(min_length=1, max_length=5_000)
     duration: str
-    tone: str
-    specific_instructions: str | None = None
+    tone: str | None = None
+    key_points: str | None = Field(default=None, max_length=3_000)
+    audience_info: str | None = Field(default=None, max_length=1_000)
+    previous_output: str | None = Field(default=None, max_length=10_000)
+    refine_instruction: str | None = Field(default=None, max_length=500)

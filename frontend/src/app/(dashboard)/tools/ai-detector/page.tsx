@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { ScanSearch, Copy, Loader2 } from "lucide-react";
+import { ScanSearch, Loader2, Square } from "lucide-react";
 import { ToolLayout } from "@/components/tools/ToolLayout";
 import { DropZone } from "@/components/tools/DropZone";
 import { StreamingOutput } from "@/components/tools/StreamingOutput";
 import { ScoreGauge } from "@/components/tools/ScoreGauge";
 import { HighlightedText } from "@/components/tools/HighlightedText";
+import { CopyButton } from "@/components/tools/CopyButton";
+import { GenerationError } from "@/components/tools/GenerationError";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,7 +25,7 @@ import { apiFetch } from "@/lib/api";
 
 const TONES = [
   { value: "convivial", label: "Convivial" },
-  { value: "academique", label: "Academique" },
+  { value: "academique", label: "Académique" },
   { value: "professionnel", label: "Professionnel" },
   { value: "neutre", label: "Neutre" },
   { value: "persuasif", label: "Persuasif" },
@@ -44,7 +46,7 @@ export default function AiDetectorPage() {
   const [scanning, setScanning] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
   const [tone, setTone] = useState<string | undefined>(undefined);
-  const { text: rewritten, isStreaming, error, start } = useStreaming();
+  const { text: rewritten, isStreaming, error, isQuotaError, start, stop } = useStreaming();
 
   const canRewrite = profile ? profile.current_tier !== "introduction" : false;
 
@@ -63,7 +65,7 @@ export default function AiDetectorPage() {
       });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
-        throw new Error(body?.detail ?? "Echec de l'analyse.");
+        throw new Error(body?.detail ?? "Échec de l'analyse.");
       }
       setResult(await res.json());
     } catch (err) {
@@ -78,16 +80,10 @@ export default function AiDetectorPage() {
     await start("/api/v1/tools/analyzers/ai-detector/rewrite", { text: result.text, tone });
   }
 
-  function handleCopy() {
-    if (!rewritten) return;
-    navigator.clipboard.writeText(rewritten);
-    toast.success("Texte copie");
-  }
-
   return (
     <ToolLayout
-      title="Detecteur de contenu IA"
-      description="Estime la probabilite qu'un texte ait ete genere par une IA."
+      title="Détecteur de contenu IA"
+      description="Estime la probabilité qu'un texte ait été généré par une IA."
       badge={
         <span className="w-fit rounded-[4px] bg-succes/10 px-2 py-0.5 text-xs font-medium text-succes">
           Score gratuit
@@ -101,7 +97,7 @@ export default function AiDetectorPage() {
             setText(e.target.value);
             setFile(null);
           }}
-          placeholder="Collez le texte a analyser..."
+          placeholder="Collez le texte à analyser..."
           maxLength={50000}
           className="min-h-32"
           disabled={!!file}
@@ -113,9 +109,9 @@ export default function AiDetectorPage() {
             setText("");
           }}
           accept=".pdf,.docx,.txt"
-          label="Glissez-deposez un PDF, DOCX ou TXT, ou"
+          label="Glissez-déposez un PDF, DOCX ou TXT, ou"
         />
-        {file && <p className="text-sm text-muted-foreground">Fichier selectionne : {file.name}</p>}
+        {file && <p className="text-sm text-muted-foreground">Fichier sélectionné : {file.name}</p>}
 
         <Button onClick={handleScan} disabled={scanning || (!text.trim() && !file)} className="w-fit">
           {scanning ? <Loader2 className="size-4 animate-spin" /> : <ScanSearch className="size-4" />}
@@ -133,10 +129,10 @@ export default function AiDetectorPage() {
 
           <div className="flex flex-col gap-3 border-t pt-4">
             <div className="flex flex-wrap items-center gap-3">
-              <h3>Reecrire dans un autre ton</h3>
+              <h3>Réécrire dans un autre ton</h3>
               {!canRewrite && (
                 <span className="rounded-[4px] bg-blue-50 px-2 py-0.5 text-xs font-medium text-bleu-boulga">
-                  Disponible des le palier Goutte
+                  Disponible dès le palier Goutte
                 </span>
               )}
             </div>
@@ -156,8 +152,14 @@ export default function AiDetectorPage() {
                   </SelectContent>
                 </Select>
                 <Button onClick={handleRewrite} disabled={isStreaming}>
-                  {isStreaming ? "Reecriture en cours..." : "Reecrire"}
+                  {isStreaming ? "Réécriture en cours..." : "Réécrire"}
                 </Button>
+                {isStreaming && (
+                  <Button variant="outline" onClick={stop}>
+                    <Square className="size-4" />
+                    Arrêter
+                  </Button>
+                )}
               </div>
             ) : (
               <a href="/settings">
@@ -175,18 +177,15 @@ export default function AiDetectorPage() {
                 </div>
                 <div>
                   <p className="mb-1.5 text-xs font-medium text-muted-foreground">
-                    Version reecrite
+                    Version réécrite
                   </p>
                   <StreamingOutput text={rewritten} isStreaming={isStreaming} />
                 </div>
               </div>
             )}
-            {error && <p className="text-sm text-erreur">{error}</p>}
+            {error && <GenerationError message={error} isQuotaError={isQuotaError} onRetry={handleRewrite} />}
             {rewritten && !isStreaming && (
-              <Button variant="outline" onClick={handleCopy} className="w-fit">
-                <Copy className="size-4" />
-                Copier la version reecrite
-              </Button>
+              <CopyButton text={rewritten} label="Copier la version réécrite" variant="outline" className="w-fit" />
             )}
           </div>
         </div>

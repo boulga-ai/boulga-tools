@@ -3,7 +3,7 @@ const TIER_LABELS: Record<string, string> = {
   goutte: "Goutte",
   source: "Source",
   fleuve: "Fleuve",
-  ocean: "Ocean",
+  ocean: "Océan",
 };
 
 // Rampe sequentielle : les paliers sont ordonnes (introduction -> ocean), pas une identite

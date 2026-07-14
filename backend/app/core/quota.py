@@ -73,12 +73,12 @@ def check_quota(user_id: str, tier: str, kind: Literal["words", "downloads"]) ->
     limit = quota[f"{kind}_limit"]
 
     if used >= limit:
-        label = "de mots" if kind == "words" else "de telechargements"
+        label = "de mots" if kind == "words" else "de téléchargements"
         raise HTTPException(
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail=(
-                f"Quota {label} atteint pour ce mois. "
-                "Passez a un palier superieur pour continuer."
+                f"Vous avez utilisé tout votre quota {label} disponible ce mois-ci. "
+                "Passez au palier supérieur pour continuer."
             ),
         )
 

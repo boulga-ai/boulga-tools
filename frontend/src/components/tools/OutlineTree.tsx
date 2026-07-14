@@ -51,7 +51,7 @@ function OutlineNodeRow({
           />
         ) : (
           <span
-            onDoubleClick={() => setEditing(true)}
+            onClick={() => setEditing(true)}
             className="flex-1 cursor-text py-1 text-sm"
             style={{ fontWeight: node.level === 1 ? 600 : 400 }}
           >

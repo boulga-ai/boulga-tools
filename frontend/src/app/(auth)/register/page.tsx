@@ -35,7 +35,7 @@ export default function RegisterPage() {
       return;
     }
 
-    toast.success("Compte cree", { description: "Bienvenue sur Boulga AI." });
+    toast.success("Compte créé", { description: "Bienvenue sur Boulga AI." });
     router.push("/");
     router.refresh();
   }
@@ -50,7 +50,7 @@ export default function RegisterPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <h2 className="text-center">Creer un compte</h2>
+      <h2 className="text-center">Créer un compte</h2>
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
@@ -75,7 +75,7 @@ export default function RegisterPage() {
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="phone">Numero de telephone</Label>
+          <Label htmlFor="phone">Numéro de téléphone</Label>
           <Input
             id="phone"
             type="tel"
@@ -96,7 +96,7 @@ export default function RegisterPage() {
           />
         </div>
         <Button type="submit" disabled={loading} className="mt-2">
-          {loading ? "Creation en cours..." : "Creer mon compte"}
+          {loading ? "Création en cours..." : "Créer mon compte"}
         </Button>
       </form>
 
@@ -110,7 +110,7 @@ export default function RegisterPage() {
       </Button>
 
       <p className="text-center text-sm text-muted-foreground">
-        Deja un compte ?{" "}
+        Déjà un compte ?{" "}
         <Link href="/login" className="text-bleu-boulga font-medium">
           Connectez-vous
         </Link>

@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     # Matrice LLM (JSON, surchargeable sans redeploiement)
     LLM_ROUTING_JSON: str = ""
 
+    # Generation academique segmentee (documents longs — memoire, these) : au-dela de
+    # ce nombre de sections dans le plan, /documents/academic/generate decoupe la
+    # generation en plusieurs appels LLM successifs plutot qu'un seul appel monolithique.
+    ACADEMIC_SEGMENT_THRESHOLD: int = 6
+    ACADEMIC_SEGMENT_SIZE: int = 2
+
     @property
     def allowed_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip()]

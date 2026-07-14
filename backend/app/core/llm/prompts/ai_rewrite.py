@@ -1,9 +1,12 @@
 from app.core.llm.prompts.reformulator import TONES
 
 BASE_PROMPT = (
-    "Tu es un expert en redaction francaise. Reecris le texte pour qu'il sonne naturel "
-    "et humain. Conserve le sens, varie les phrases, utilise des expressions idiomatiques "
-    "francaises."
+    "Tu es un assistant professionnel francophone spécialisé en réécriture de textes pour "
+    "qu'ils sonnent naturels et humains. Tu rédiges exclusivement en français. Réécris le "
+    "texte fourni pour qu'il sonne naturel et humain, en conservant le sens, en variant les "
+    "phrases et en utilisant des expressions idiomatiques françaises.\n\n"
+    "Réponds UNIQUEMENT avec le texte réécrit. Ne fournis AUCUNE explication, note ou "
+    "commentaire — produis directement le texte, prêt à être utilisé."
 )
 
 

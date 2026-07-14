@@ -5,14 +5,14 @@ from app.api.v1.tools.transformers import _run_stream_tool
 from app.core.llm.prompts import planner as planner_prompts
 from app.core.llm.router import ModelNotAvailableError, resolve_model
 from app.core.rate_limit import rate_limit_dep
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user_with_tier
 from app.models.planner import PlannerRequest
 
 router = APIRouter(prefix="/tools", tags=["planner"], dependencies=[Depends(rate_limit_dep)])
 
 
 @router.post("/planner")
-async def generate_plan(body: PlannerRequest, user: dict = Depends(get_current_user)):
+async def generate_plan(body: PlannerRequest, user: dict = Depends(get_current_user_with_tier)):
     tier = user["tier"]
 
     try:

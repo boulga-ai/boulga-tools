@@ -34,5 +34,7 @@ Supabase Studio → SQL Editor → New query → Run.
   (extension Supabase) ou une tache planifiee externe — requetes fournies en commentaire
   dans `0003_storage.sql`.
 - Toute ecriture sur `quotas`, `usage_logs`, `subscriptions`, `documents`,
-  `academic_sessions`, `conversations` et `profiles.current_tier` passe exclusivement par le
-  backend FastAPI via `service_role` (qui bypass RLS). Le client ne fait que lire.
+  `document_sessions` (ex-`academic_sessions`, generalisee en 0009 a plusieurs outils
+  via une colonne `tool`), `conversations` et `profiles.current_tier` passe
+  exclusivement par le backend FastAPI via `service_role` (qui bypass RLS). Le client
+  ne fait que lire.

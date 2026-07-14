@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 export function TagInput({
   tags,
   onChange,
-  placeholder = "Ajouter et appuyer sur Entree",
+  placeholder = "Ajouter et appuyer sur Entrée",
 }: {
   tags: string[];
   onChange: (tags: string[]) => void;

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { FolderClosed, Settings, LogOut, ShieldCheck } from "lucide-react";
+import { FolderClosed, Settings, LogOut, ShieldCheck, PanelLeftClose } from "lucide-react";
 import { PACK_LABELS, toolsByPack, type ToolPack } from "@/lib/tools";
 import { ToolIcon } from "@/components/tool-icon";
 import { QuotaBar } from "@/components/layout/QuotaBar";
@@ -19,7 +19,16 @@ import { cn } from "@/lib/utils";
 
 const PACK_ORDER: ToolPack[] = ["gratuit", "redaction", "documents"];
 
-export function Sidebar({ className }: { className?: string }) {
+export function Sidebar({
+  className,
+  onCollapse,
+}: {
+  className?: string;
+  // Presente uniquement par l'usage desktop (voir (dashboard)/layout.tsx) — la
+  // version affichee dans le Sheet mobile (Header.tsx) n'a pas besoin de se
+  // refermer elle-meme, le Sheet s'en charge deja.
+  onCollapse?: () => void;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, profile, signOut } = useAuth();
@@ -33,9 +42,21 @@ export function Sidebar({ className }: { className?: string }) {
         className,
       )}
     >
-      <Link href="/" className="px-2 text-lg font-semibold text-marine">
-        Boulga AI
-      </Link>
+      <div className="flex items-center justify-between px-2">
+        <Link href="/" className="text-lg font-semibold text-marine">
+          Boulga AI
+        </Link>
+        {onCollapse && (
+          <button
+            type="button"
+            onClick={onCollapse}
+            title="Masquer le menu"
+            className="flex size-6 items-center justify-center rounded-[6px] text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <PanelLeftClose className="size-4" />
+          </button>
+        )}
+      </div>
 
       <nav className="flex-1 space-y-5 overflow-y-auto">
         {PACK_ORDER.map((pack) => (
@@ -89,7 +110,7 @@ export function Sidebar({ className }: { className?: string }) {
             )}
           >
             <Settings className="size-4 shrink-0" />
-            Parametres
+            Paramètres
           </Link>
           {profile?.role === "admin" && (
             <Link
@@ -121,12 +142,12 @@ export function Sidebar({ className }: { className?: string }) {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-56">
           <DropdownMenuItem onClick={() => router.push("/settings")}>
-            Parametres
+            Paramètres
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={signOut} variant="destructive">
             <LogOut className="size-4" />
-            Se deconnecter
+            Se déconnecter
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

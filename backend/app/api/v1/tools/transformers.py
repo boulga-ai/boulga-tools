@@ -85,7 +85,10 @@ async def _run_stream_tool(
 
     words = count_words(full_text)
     if consume:
-        consume_words(user["user_id"], words)
+        try:
+            consume_words(user["user_id"], words)
+        except Exception:
+            pass  # la generation a deja ete livree ; ne pas casser le flux sur un souci de quota
     yield {"event": "done", "data": json.dumps({"words": words})}
 
 
@@ -127,7 +130,12 @@ async def email_writer(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
 
     user_message = email_prompts.build_user_message(
-        body.context, body.recipient, body.objective, body.tone
+        body.description,
+        body.tone,
+        body.subject,
+        body.extra_details,
+        body.previous_output,
+        body.refine_instruction,
     )
     messages = [
         {"role": "system", "content": email_prompts.SYSTEM_PROMPT},
@@ -135,10 +143,12 @@ async def email_writer(
     ]
 
     def persist(full_text: str) -> None:
+        first_line = full_text.split("\n", 1)[0]
+        title = first_line[7:].strip() if first_line.lower().startswith("objet:") else body.description[:50]
         save_conversation(
             user["user_id"],
             "email_writer",
-            title=body.objective,
+            title=title,
             messages=[
                 {"role": "user", "content": user_message},
                 {"role": "assistant", "content": full_text},
@@ -181,12 +191,14 @@ async def social_posts(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
 
     user_message = social_posts_prompts.build_user_message(
-        body.subject,
+        body.description,
         body.platform,
         body.tone,
         body.target_audience,
-        body.key_message,
+        body.keywords,
         body.call_to_action,
+        body.previous_output,
+        body.refine_instruction,
     )
     messages = [
         {"role": "system", "content": social_posts_prompts.SYSTEM_PROMPT},
@@ -275,7 +287,10 @@ async def chat(
             pass  # la reponse a deja ete livree ; ne pas casser le flux sur un souci de persistance
 
         words = count_words(full_text)
-        consume_words(user["user_id"], words)
+        try:
+            consume_words(user["user_id"], words)
+        except Exception:
+            pass  # la reponse a deja ete livree ; ne pas casser le flux sur un souci de quota
         yield {
             "event": "done",
             "data": json.dumps({"words": words, "conversation_id": conversation_id}),
@@ -298,12 +313,13 @@ async def speech_writer(
 
     user_message = speech_prompts.build_user_message(
         body.speech_type,
-        body.context,
-        body.audience,
-        body.key_points,
+        body.description,
         body.duration,
         body.tone,
-        body.specific_instructions,
+        body.key_points,
+        body.audience_info,
+        body.previous_output,
+        body.refine_instruction,
     )
     messages = [
         {"role": "system", "content": speech_prompts.SYSTEM_PROMPT},

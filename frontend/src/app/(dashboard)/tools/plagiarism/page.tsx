@@ -2,9 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Shield, Copy, Loader2, ExternalLink } from "lucide-react";
+import { Shield, Loader2, ExternalLink, Square } from "lucide-react";
 import { ToolLayout } from "@/components/tools/ToolLayout";
 import { DropZone } from "@/components/tools/DropZone";
+import { CopyButton } from "@/components/tools/CopyButton";
+import { GenerationError } from "@/components/tools/GenerationError";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,7 +22,7 @@ import { apiFetch } from "@/lib/api";
 
 const TONES = [
   { value: "convivial", label: "Convivial" },
-  { value: "academique", label: "Academique" },
+  { value: "academique", label: "Académique" },
   { value: "professionnel", label: "Professionnel" },
   { value: "neutre", label: "Neutre" },
   { value: "persuasif", label: "Persuasif" },
@@ -48,7 +50,7 @@ export default function PlagiarismPage() {
   const [polling, setPolling] = useState(false);
   const [result, setResult] = useState<PollResult | null>(null);
   const [tone, setTone] = useState<string | undefined>(undefined);
-  const { text: correction, isStreaming, error, start } = useStreaming();
+  const { text: correction, isStreaming, error, isQuotaError, start, stop } = useStreaming();
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const canCorrect = profile ? profile.current_tier !== "introduction" : false;
@@ -74,7 +76,7 @@ export default function PlagiarismPage() {
       });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
-        throw new Error(body?.detail ?? "Echec de la soumission.");
+        throw new Error(body?.detail ?? "Échec de la soumission.");
       }
       const data = await res.json();
       setScannedText(data.text);
@@ -92,7 +94,7 @@ export default function PlagiarismPage() {
         }
       }, 3000);
     } catch (err) {
-      toast.error("Verification impossible", { description: (err as Error).message });
+      toast.error("Vérification impossible", { description: (err as Error).message });
     } finally {
       setSubmitting(false);
     }
@@ -107,16 +109,10 @@ export default function PlagiarismPage() {
     });
   }
 
-  function handleCopy() {
-    if (!correction) return;
-    navigator.clipboard.writeText(correction);
-    toast.success("Correction copiee");
-  }
-
   return (
     <ToolLayout
-      title="Verificateur de plagiat"
-      description="Estime le taux de contenu potentiellement plagie dans un texte."
+      title="Vérificateur de plagiat"
+      description="Estime le taux de contenu potentiellement plagié dans un texte."
       badge={
         <span className="w-fit rounded-[4px] bg-succes/10 px-2 py-0.5 text-xs font-medium text-succes">
           Score gratuit
@@ -130,7 +126,7 @@ export default function PlagiarismPage() {
             setText(e.target.value);
             setFile(null);
           }}
-          placeholder="Collez le texte a verifier..."
+          placeholder="Collez le texte à vérifier..."
           maxLength={50000}
           className="min-h-32"
           disabled={!!file}
@@ -142,13 +138,13 @@ export default function PlagiarismPage() {
             setText("");
           }}
           accept=".pdf,.docx,.txt"
-          label="Glissez-deposez un PDF, DOCX ou TXT, ou"
+          label="Glissez-déposez un PDF, DOCX ou TXT, ou"
         />
-        {file && <p className="text-sm text-muted-foreground">Fichier selectionne : {file.name}</p>}
+        {file && <p className="text-sm text-muted-foreground">Fichier sélectionné : {file.name}</p>}
 
         <Button onClick={handleScan} disabled={submitting || polling || (!text.trim() && !file)} className="w-fit">
           {submitting ? <Loader2 className="size-4 animate-spin" /> : <Shield className="size-4" />}
-          {submitting ? "Envoi en cours..." : "Verifier le plagiat"}
+          {submitting ? "Envoi en cours..." : "Vérifier le plagiat"}
         </Button>
       </div>
 
@@ -168,13 +164,13 @@ export default function PlagiarismPage() {
 
           <div className="flex flex-col gap-2">
             {result.flagged_spans.length === 0 && (
-              <p className="text-sm text-muted-foreground">Aucun passage suspect detecte.</p>
+              <p className="text-sm text-muted-foreground">Aucun passage suspect détecté.</p>
             )}
             {result.flagged_spans.map((span, i) => (
               <div key={i} className="rounded-[8px] border bg-attention/10 p-3 text-sm">
                 <p>{span.text}</p>
                 <div className="mt-1.5 flex items-center gap-3 text-xs text-muted-foreground">
-                  <span>{span.similarity}% de similarite</span>
+                  <span>{span.similarity}% de similarité</span>
                   <a
                     href={span.source_url}
                     target="_blank"
@@ -191,10 +187,10 @@ export default function PlagiarismPage() {
           {result.flagged_spans.length > 0 && (
             <div className="flex flex-col gap-3 border-t pt-4">
               <div className="flex flex-wrap items-center gap-3">
-                <h3>Corriger les passages detectes</h3>
+                <h3>Corriger les passages détectés</h3>
                 {!canCorrect && (
                   <span className="rounded-[4px] bg-blue-50 px-2 py-0.5 text-xs font-medium text-bleu-boulga">
-                    Des le palier Goutte
+                    Dès le palier Goutte
                   </span>
                 )}
               </div>
@@ -214,8 +210,14 @@ export default function PlagiarismPage() {
                     </SelectContent>
                   </Select>
                   <Button onClick={handleCorrect} disabled={isStreaming}>
-                    {isStreaming ? "Correction en cours..." : "Corriger les passages detectes"}
+                    {isStreaming ? "Correction en cours..." : "Corriger les passages détectés"}
                   </Button>
+                  {isStreaming && (
+                    <Button variant="outline" onClick={stop}>
+                      <Square className="size-4" />
+                      Arrêter
+                    </Button>
+                  )}
                 </div>
               ) : (
                 <a href="/settings">
@@ -231,12 +233,9 @@ export default function PlagiarismPage() {
                   )}
                 </div>
               )}
-              {error && <p className="text-sm text-erreur">{error}</p>}
+              {error && <GenerationError message={error} isQuotaError={isQuotaError} onRetry={handleCorrect} />}
               {correction && !isStreaming && (
-                <Button variant="outline" onClick={handleCopy} className="w-fit">
-                  <Copy className="size-4" />
-                  Copier la correction
-                </Button>
+                <CopyButton text={correction} label="Copier la correction" variant="outline" className="w-fit" />
               )}
             </div>
           )}

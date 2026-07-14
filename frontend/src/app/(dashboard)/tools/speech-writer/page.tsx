@@ -1,14 +1,21 @@
 "use client";
 
 import { useState } from "react";
-import { toast } from "sonner";
-import { Mic, Copy, RotateCcw, Minus, Plus } from "lucide-react";
+import { Mic, RotateCcw, Minus, Plus, ChevronRight, Square } from "lucide-react";
 import { ToolLayout } from "@/components/tools/ToolLayout";
 import { StreamingOutput } from "@/components/tools/StreamingOutput";
+import { CopyButton } from "@/components/tools/CopyButton";
+import { GenerationError } from "@/components/tools/GenerationError";
+import { RefineBar } from "@/components/tools/RefineBar";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   Select,
   SelectContent,
@@ -18,66 +25,86 @@ import {
 } from "@/components/ui/select";
 import { useAuth } from "@/hooks/useAuth";
 import { useStreaming } from "@/hooks/useStreaming";
+import { cn } from "@/lib/utils";
 
-const SPEECH_TYPES = [
-  { value: "pitch_elevator", label: "Pitch elevator (1-2 min)" },
-  { value: "pitch_investor", label: "Pitch investisseur (5-10 min)" },
-  { value: "pitch_commercial", label: "Pitch commercial" },
-  { value: "formal", label: "Discours formel (ceremonie, inauguration)" },
-  { value: "professional", label: "Presentation professionnelle" },
-  { value: "motivation", label: "Discours de motivation" },
-  { value: "toast", label: "Toast / discours d'occasion" },
-  { value: "soutenance", label: "Soutenance (memoire, these)" },
+const SPEECH_TYPES: { value: string; label: string; placeholder: string }[] = [
+  {
+    value: "pitch_commercial",
+    label: "Pitch commercial",
+    placeholder:
+      "Ex : Je présente ma startup de logistique devant 20 investisseurs, notre solution résout le problème du dernier kilomètre...",
+  },
+  {
+    value: "soutenance",
+    label: "Pitch de soutenance",
+    placeholder:
+      "Ex : Je soutiens mon mémoire sur la transformation digitale des PME au Burkina Faso, devant un jury de 3 professeurs...",
+  },
+  {
+    value: "ceremoniel",
+    label: "Discours cérémoniel",
+    placeholder: "Ex : Discours d'ouverture pour la cérémonie de remise de diplômes de l'université...",
+  },
+  {
+    value: "prise_parole",
+    label: "Prise de parole en public",
+    placeholder:
+      "Ex : Je dois présenter les résultats du trimestre devant toute mon équipe lors de notre réunion mensuelle...",
+  },
 ];
 
-const DURATIONS = ["1 min", "3 min", "5 min", "10 min", "15 min", "30 min"];
+const DURATIONS = ["3 min", "5 min", "10 min", "15 min", "20 min"];
 
-const TONES = ["Professionnel", "Inspirant", "Solennel", "Decontracte", "Persuasif"];
-
-const WORDS_PER_MINUTE = 130;
+const TONES = ["Professionnel", "Inspirant", "Solennel", "Décontracté", "Persuasif"];
 
 function durationIndex(duration: string): number {
   const idx = DURATIONS.indexOf(duration);
-  return idx === -1 ? 2 : idx;
+  return idx === -1 ? 1 : idx;
 }
 
 export default function SpeechWriterPage() {
   const { profile } = useAuth();
   const [speechType, setSpeechType] = useState("pitch_commercial");
-  const [context, setContext] = useState("");
-  const [audience, setAudience] = useState("");
-  const [keyPoints, setKeyPoints] = useState("");
+  const [description, setDescription] = useState("");
   const [duration, setDuration] = useState("5 min");
   const [tone, setTone] = useState("Professionnel");
-  const [instructions, setInstructions] = useState("");
-  const [estimatedMinutes, setEstimatedMinutes] = useState<number | null>(null);
-  const { text: output, isStreaming, error, start } = useStreaming();
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [keyPoints, setKeyPoints] = useState("");
+  const [audienceInfo, setAudienceInfo] = useState("");
+  const { text: output, isStreaming, error, isQuotaError, start, stop } = useStreaming();
 
   const available = profile ? profile.current_tier !== "introduction" : false;
-  const canSubmit = context.trim() && audience.trim() && keyPoints.trim() && available;
+  const canSubmit = description.trim().length > 0 && available;
+  const currentPlaceholder =
+    SPEECH_TYPES.find((t) => t.value === speechType)?.placeholder ?? "";
+  const estimatedMinutes = output
+    ? Math.max(1, Math.round(output.trim().split(/\s+/).length / 130))
+    : null;
 
   async function generate(overrideDuration?: string) {
     if (!canSubmit) return;
-    let wordCount = 0;
-    await start(
-      "/api/v1/tools/transformers/speech-writer",
-      {
-        speech_type: speechType,
-        context,
-        audience,
-        key_points: keyPoints,
-        duration: overrideDuration ?? duration,
-        tone,
-        specific_instructions: instructions || undefined,
-      },
-      {
-        onDone: (data) => {
-          const payload = data as { words: number };
-          wordCount = payload.words;
-          setEstimatedMinutes(Math.max(1, Math.round(wordCount / WORDS_PER_MINUTE)));
-        },
-      },
-    );
+    await start("/api/v1/tools/transformers/speech-writer", {
+      speech_type: speechType,
+      description,
+      duration: overrideDuration ?? duration,
+      tone,
+      key_points: keyPoints || undefined,
+      audience_info: audienceInfo || undefined,
+    });
+  }
+
+  async function handleRefine(instruction: string) {
+    if (!canSubmit) return;
+    await start("/api/v1/tools/transformers/speech-writer", {
+      speech_type: speechType,
+      description,
+      duration,
+      tone,
+      key_points: keyPoints || undefined,
+      audience_info: audienceInfo || undefined,
+      previous_output: output,
+      refine_instruction: instruction,
+    });
   }
 
   function adjustDuration(direction: "shorter" | "longer") {
@@ -89,20 +116,14 @@ export default function SpeechWriterPage() {
     generate(nextDuration);
   }
 
-  function handleCopy() {
-    if (!output) return;
-    navigator.clipboard.writeText(output);
-    toast.success("Discours copie");
-  }
-
   return (
     <ToolLayout
       title="Discours et pitchs"
-      description="Redige un discours, un pitch commercial ou une preparation de soutenance."
+      description="Décrivez votre discours, l'IA le structure pour l'oral."
       badge={
         !available ? (
           <span className="w-fit rounded-[4px] bg-blue-50 px-2 py-0.5 text-xs font-medium text-bleu-boulga">
-            Des le palier Goutte
+            Dès le palier Goutte
           </span>
         ) : undefined
       }
@@ -126,43 +147,22 @@ export default function SpeechWriterPage() {
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="context">Contexte / occasion</Label>
+            <Label htmlFor="description">Décrivez votre discours</Label>
             <Textarea
-              id="context"
-              value={context}
-              onChange={(e) => setContext(e.target.value)}
-              placeholder="Presentation de mon startup devant des investisseurs..."
-              className="min-h-20"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="audience">Audience</Label>
-            <Input
-              id="audience"
-              value={audience}
-              onChange={(e) => setAudience(e.target.value)}
-              placeholder="20 investisseurs, profils tech et finance"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="keyPoints">Points cles a couvrir</Label>
-            <Textarea
-              id="keyPoints"
-              value={keyPoints}
-              onChange={(e) => setKeyPoints(e.target.value)}
-              placeholder="Notre solution resout X, marche de Y milliards..."
-              className="min-h-20"
+              id="description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder={currentPlaceholder}
+              className="min-h-28"
             />
           </div>
 
           <div className="flex gap-3">
             <div className="flex flex-1 flex-col gap-1.5">
-              <Label>Duree souhaitee</Label>
+              <Label>Durée souhaitée</Label>
               <Select value={duration} onValueChange={(value) => value && setDuration(value)}>
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Duree" />
+                  <SelectValue placeholder="Durée" />
                 </SelectTrigger>
                 <SelectContent>
                   {DURATIONS.map((d) => (
@@ -190,43 +190,65 @@ export default function SpeechWriterPage() {
             </div>
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="instructions">Instructions particulieres (optionnel)</Label>
-            <Textarea
-              id="instructions"
-              value={instructions}
-              onChange={(e) => setInstructions(e.target.value)}
-              className="min-h-16"
-            />
-          </div>
+          <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+            <CollapsibleTrigger className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+              <ChevronRight className={cn("size-3.5 transition-transform", advancedOpen && "rotate-90")} />
+              Options avancées
+            </CollapsibleTrigger>
+            <CollapsibleContent className="flex flex-col gap-3 pt-3">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="keyPoints">Points spécifiques à couvrir (optionnel)</Label>
+                <Textarea
+                  id="keyPoints"
+                  value={keyPoints}
+                  onChange={(e) => setKeyPoints(e.target.value)}
+                  className="min-h-16"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="audienceInfo">Informations sur l&apos;audience (optionnel)</Label>
+                <Input
+                  id="audienceInfo"
+                  value={audienceInfo}
+                  onChange={(e) => setAudienceInfo(e.target.value)}
+                  placeholder="20 investisseurs, profils tech et finance..."
+                />
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
 
-          <Button onClick={() => generate()} disabled={isStreaming || !canSubmit} className="w-fit">
-            <Mic className="size-4" />
-            {isStreaming ? "Redaction en cours..." : "Rediger le discours"}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button onClick={() => generate()} disabled={isStreaming || !canSubmit} className="w-fit">
+              <Mic className="size-4" />
+              {isStreaming ? "Rédaction en cours..." : "Rédiger le discours"}
+            </Button>
+            {isStreaming && (
+              <Button variant="outline" onClick={stop} className="w-fit">
+                <Square className="size-4" />
+                Arrêter
+              </Button>
+            )}
+          </div>
           {!available && (
             <p className="text-sm text-muted-foreground">
-              Cet outil necessite un abonnement a partir du palier Goutte.
+              Cet outil nécessite un abonnement à partir du palier Goutte.
             </p>
           )}
         </div>
 
         <div className="flex flex-col gap-3">
           <StreamingOutput text={output} isStreaming={isStreaming} />
-          {error && <p className="text-sm text-erreur">{error}</p>}
+          {error && <GenerationError message={error} isQuotaError={isQuotaError} onRetry={() => generate()} />}
           {estimatedMinutes !== null && !isStreaming && (
             <p className="text-sm text-muted-foreground">
-              Duree estimee a l&apos;oral : environ {estimatedMinutes} min
+              Durée estimée de lecture : environ {estimatedMinutes} min
             </p>
           )}
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={handleCopy} disabled={!output}>
-              <Copy className="size-4" />
-              Copier
-            </Button>
+            <CopyButton text={output} label="Copier le discours" disabled={isStreaming} />
             <Button variant="outline" onClick={() => generate()} disabled={isStreaming || !canSubmit}>
               <RotateCcw className="size-4" />
-              Regenerer
+              Régénérer
             </Button>
             <Button
               variant="outline"
@@ -245,6 +267,13 @@ export default function SpeechWriterPage() {
               Version plus longue
             </Button>
           </div>
+          {output && !isStreaming && (
+            <RefineBar
+              presets={["Plus solennel", "Plus simple", "Plus percutant"]}
+              onRefine={handleRefine}
+              disabled={isStreaming}
+            />
+          )}
         </div>
       </div>
     </ToolLayout>

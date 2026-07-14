@@ -17,11 +17,13 @@ export function useStreaming() {
   const [text, setText] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isQuotaError, setIsQuotaError] = useState(false);
   const controllerRef = useRef<AbortController | null>(null);
 
   const start = useCallback(async (path: string, body: unknown, handlers: SSEHandlers = {}) => {
     setText("");
     setError(null);
+    setIsQuotaError(false);
     setIsStreaming(true);
     const controller = new AbortController();
     controllerRef.current = controller;
@@ -35,8 +37,16 @@ export function useStreaming() {
       });
 
       if (!res.ok || !res.body) {
-        const message = await res.text().catch(() => "");
-        throw new Error(message || `Erreur ${res.status}`);
+        const raw = await res.text().catch(() => "");
+        let message = raw || `Erreur ${res.status}`;
+        try {
+          const data = JSON.parse(raw) as { detail?: unknown };
+          if (typeof data.detail === "string") message = data.detail;
+        } catch {
+          // corps non-JSON : on garde le texte brut comme message
+        }
+        if (res.status === 402) setIsQuotaError(true);
+        throw new Error(message);
       }
 
       const reader = res.body.getReader();
@@ -76,14 +86,14 @@ export function useStreaming() {
             handlers.onDone?.(parsed);
           } else if (eventType === "error") {
             const errEvent = parsed as unknown as ErrorEvent;
-            setError(errEvent.message ?? "Une erreur est survenue.");
+            setError(errEvent.message || "Une erreur est survenue. Veuillez réessayer.");
             handlers.onError?.(errEvent);
           }
         }
       }
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
-        setError((err as Error).message || "Une erreur est survenue.");
+        setError((err as Error).message || "Une erreur est survenue. Veuillez réessayer.");
       }
     } finally {
       setIsStreaming(false);
@@ -95,5 +105,5 @@ export function useStreaming() {
     controllerRef.current?.abort();
   }, []);
 
-  return { text, isStreaming, error, start, stop, setText };
+  return { text, isStreaming, error, isQuotaError, start, stop, setText };
 }

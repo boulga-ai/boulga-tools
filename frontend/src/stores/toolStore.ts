@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { CVContent } from "@/lib/document-types";
+import type { DocBlock } from "@/types/document-engine";
 
 type OutlineSection = {
   id: string;
@@ -13,15 +13,15 @@ type ToolState = {
   // ou le Redacteur academique sans nouvel appel LLM.
   pendingOutline: OutlineSection[] | null;
   setPendingOutline: (outline: OutlineSection[] | null) => void;
-  // Dernier CV genere dans la session, reutilisable par "Importer depuis mon CV"
-  // sur le Redacteur de lettre de motivation.
-  lastCV: CVContent | null;
-  setLastCV: (cv: CVContent | null) => void;
+  // Blocs du dernier CV genere dans la session, reutilisables par "Importer depuis
+  // mon CV" sur le Redacteur de lettre de motivation.
+  lastCVBlocks: DocBlock[] | null;
+  setLastCVBlocks: (blocks: DocBlock[] | null) => void;
 };
 
 export const useToolStore = create<ToolState>((set) => ({
   pendingOutline: null,
   setPendingOutline: (outline) => set({ pendingOutline: outline }),
-  lastCV: null,
-  setLastCV: (cv) => set({ lastCV: cv }),
+  lastCVBlocks: null,
+  setLastCVBlocks: (blocks) => set({ lastCVBlocks: blocks }),
 }));

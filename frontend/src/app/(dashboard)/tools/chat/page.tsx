@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Plus, Send, Trash2, Menu, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CopyButton } from "@/components/tools/CopyButton";
+import { GenerationError } from "@/components/tools/GenerationError";
 import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
@@ -27,7 +29,7 @@ type ConversationSummary = { id: string; title: string; updated_at: string };
 function relativeDate(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
   const minutes = Math.floor(diffMs / 60000);
-  if (minutes < 1) return "a l'instant";
+  if (minutes < 1) return "à l'instant";
   if (minutes < 60) return `il y a ${minutes} min`;
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `il y a ${hours} h`;
@@ -40,7 +42,7 @@ export default function ChatPage() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const { text, isStreaming, start, stop, setText } = useStreaming();
+  const { text, isStreaming, error, isQuotaError, start, stop, setText } = useStreaming();
   const { quota, refetch: refetchQuota } = useQuota();
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -80,12 +82,7 @@ export default function ChatPage() {
     refreshConversations();
   }
 
-  async function handleSend() {
-    const message = input.trim();
-    if (!message || isStreaming) return;
-    setInput("");
-    setMessages((prev) => [...prev, { role: "user", content: message }]);
-
+  async function sendMessage(message: string) {
     let assistantText = "";
 
     await start(
@@ -105,6 +102,19 @@ export default function ChatPage() {
     );
     refetchQuota();
     refreshConversations();
+  }
+
+  async function handleSend() {
+    const message = input.trim();
+    if (!message || isStreaming) return;
+    setInput("");
+    setMessages((prev) => [...prev, { role: "user", content: message }]);
+    await sendMessage(message);
+  }
+
+  function retryLast() {
+    const lastUser = [...messages].reverse().find((m) => m.role === "user");
+    if (lastUser && !isStreaming) sendMessage(lastUser.content);
   }
 
   const conversationList = (
@@ -143,7 +153,7 @@ export default function ChatPage() {
                 <AlertDialogHeader>
                   <AlertDialogTitle>Supprimer cette conversation ?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Cette action est irreversible.
+                    Cette action est irréversible.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -191,7 +201,10 @@ export default function ChatPage() {
           {messages.map((m, i) => (
             <div
               key={i}
-              className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}
+              className={cn(
+                "group flex flex-col gap-1",
+                m.role === "user" ? "items-end" : "items-start",
+              )}
             >
               <div
                 className={cn(
@@ -201,6 +214,15 @@ export default function ChatPage() {
               >
                 {m.content}
               </div>
+              {m.role === "assistant" && (
+                <CopyButton
+                  text={m.content}
+                  label="Copier"
+                  variant="ghost"
+                  size="sm"
+                  className="hidden h-6 px-1.5 text-xs text-muted-foreground group-hover:flex"
+                />
+              )}
             </div>
           ))}
 
@@ -215,6 +237,11 @@ export default function ChatPage() {
         </div>
 
         <div className="border-t bg-card p-3 md:p-4">
+          {error && (
+            <div className="mx-auto mb-2 max-w-3xl">
+              <GenerationError message={error} isQuotaError={isQuotaError} onRetry={retryLast} />
+            </div>
+          )}
           <div className="mx-auto flex max-w-3xl items-end gap-2">
             <Textarea
               value={input}
@@ -225,13 +252,13 @@ export default function ChatPage() {
                   handleSend();
                 }
               }}
-              placeholder="Ecrivez votre message..."
+              placeholder="Écrivez votre message..."
               className="max-h-40 min-h-11 flex-1 resize-none"
             />
             {isStreaming ? (
               <Button variant="outline" onClick={stop}>
                 <Square className="size-4" />
-                Arreter
+                Arrêter
               </Button>
             ) : (
               <Button onClick={handleSend} disabled={!input.trim()}>

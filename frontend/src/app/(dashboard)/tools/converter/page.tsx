@@ -65,10 +65,10 @@ export default function ConverterPage() {
   return (
     <ToolLayout
       title="Convertisseur de fichiers"
-      description="Convertit PDF, Word, Excel, PowerPoint et images, avec fusion et separation de PDF."
+      description="Convertit PDF, Word, Excel, PowerPoint et images, avec fusion et séparation de PDF."
       badge={
         <span className="w-fit rounded-[4px] bg-succes/10 px-2 py-0.5 text-xs font-medium text-succes">
-          Gratuit et illimite
+          Gratuit et illimité
         </span>
       }
     >
@@ -76,7 +76,7 @@ export default function ConverterPage() {
         <TabsList>
           <TabsTrigger value="convert">Convertir</TabsTrigger>
           <TabsTrigger value="merge">Fusionner PDF</TabsTrigger>
-          <TabsTrigger value="split">Separer PDF</TabsTrigger>
+          <TabsTrigger value="split">Séparer PDF</TabsTrigger>
         </TabsList>
 
         <TabsContent value="convert">
@@ -98,7 +98,7 @@ function ResultDownload({ url, filename }: { url: string; filename: string }) {
     <a href={url} download={filename} target="_blank" rel="noreferrer">
       <Button variant="outline" className="w-fit">
         <Download className="size-4" />
-        Telecharger {filename}
+        Télécharger {filename}
       </Button>
     </a>
   );
@@ -130,7 +130,7 @@ function ConvertTab() {
       );
       if (!res.ok) {
         const body = await res.json().catch(() => null);
-        throw new Error(body?.detail ?? "Echec de la conversion.");
+        throw new Error(body?.detail ?? "Échec de la conversion.");
       }
       setResult(await res.json());
     } catch (err) {
@@ -186,7 +186,7 @@ function MergeTab() {
   function addFiles(newFiles: FileList) {
     const pdfsOnly = Array.from(newFiles).filter((f) => extOf(f.name) === "pdf");
     if (pdfsOnly.length !== newFiles.length) {
-      toast.error("Seuls les fichiers PDF sont acceptes pour la fusion.");
+      toast.error("Seuls les fichiers PDF sont acceptés pour la fusion.");
     }
     setFiles((prev) => [...prev, ...pdfsOnly]);
     setResult(null);
@@ -218,7 +218,7 @@ function MergeTab() {
       });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
-        throw new Error(body?.detail ?? "Echec de la fusion.");
+        throw new Error(body?.detail ?? "Échec de la fusion.");
       }
       setResult(await res.json());
     } catch (err) {
@@ -230,7 +230,7 @@ function MergeTab() {
 
   return (
     <div className="flex flex-col gap-4 pt-4">
-      <DropZone onFiles={addFiles} multiple accept="application/pdf" label="Glissez-deposez des PDF, ou" />
+      <DropZone onFiles={addFiles} multiple accept="application/pdf" label="Glissez-déposez des PDF, ou" />
 
       {files.length > 0 && (
         <div className="flex flex-col gap-1.5">
@@ -278,7 +278,7 @@ function SplitTab() {
   function handleFiles(files: FileList) {
     const f = files[0];
     if (extOf(f.name) !== "pdf") {
-      toast.error("Seul un fichier PDF peut etre separe.");
+      toast.error("Seul un fichier PDF peut être séparé.");
       return;
     }
     setFile(f);
@@ -298,7 +298,7 @@ function SplitTab() {
       );
       if (!res.ok) {
         const body = await res.json().catch(() => null);
-        throw new Error(body?.detail ?? "Echec de l'extraction.");
+        throw new Error(body?.detail ?? "Échec de l'extraction.");
       }
       setResult(await res.json());
     } catch (err) {
@@ -310,7 +310,7 @@ function SplitTab() {
 
   return (
     <div className="flex flex-col gap-4 pt-4">
-      <DropZone onFiles={handleFiles} accept="application/pdf" label="Glissez-deposez un PDF, ou" />
+      <DropZone onFiles={handleFiles} accept="application/pdf" label="Glissez-déposez un PDF, ou" />
 
       {file && (
         <div className="flex items-center gap-3 rounded-[8px] border bg-card p-3">
@@ -323,7 +323,7 @@ function SplitTab() {
       )}
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="pages">Pages a extraire</Label>
+        <Label htmlFor="pages">Pages à extraire</Label>
         <Input
           id="pages"
           value={pages}

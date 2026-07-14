@@ -13,7 +13,7 @@ export function BarChart({
   const max = Math.max(...sorted.map((d) => d.value), 1);
 
   if (sorted.length === 0) {
-    return <p className="text-sm text-muted-foreground">Aucune donnee sur cette periode.</p>;
+    return <p className="text-sm text-muted-foreground">Aucune donnée sur cette période.</p>;
   }
 
   return (

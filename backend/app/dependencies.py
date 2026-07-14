@@ -65,6 +65,15 @@ async def require_admin(user: dict = Depends(get_current_user)) -> dict:
     return user
 
 
+async def get_current_user_with_tier(user: dict = Depends(get_current_user)) -> dict:
+    """Comme get_current_user, mais enrichi du palier — sans verification de quota.
+    Utilise par les generateurs de documents formates (CV, lettre, doc pro) dont la
+    generation est gratuite : ils ont besoin du palier pour choisir le modele LLM,
+    mais ne doivent pas etre bloques par check_quota_dep."""
+    profile = get_profile(user["user_id"])
+    return {**user, "tier": profile["current_tier"]}
+
+
 def check_quota_dep(kind: Literal["words", "downloads"]):
     """Dependance FastAPI : verifie le solde de quota du palier courant avant d'entrer
     dans un endpoint d'outil. Renvoie l'utilisateur enrichi de son palier."""

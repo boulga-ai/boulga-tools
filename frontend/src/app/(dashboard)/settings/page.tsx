@@ -27,11 +27,11 @@ import {
 import { cn } from "@/lib/utils";
 
 const TIERS = [
-  { value: "introduction", label: "Introduction", price: "Gratuit", access: "Pack Introduction, quota limite." },
-  { value: "goutte", label: "Goutte", price: "2 900 FCFA/mois", access: "Introduction + un pack au choix, telechargements debloques." },
-  { value: "source", label: "Source", price: "5 999 FCFA/mois", access: "Comme Goutte, quota plus genereux." },
-  { value: "fleuve", label: "Fleuve", price: "9 999 FCFA/mois", access: "Les deux packs debloques." },
-  { value: "ocean", label: "Ocean", price: "29 999 FCFA/mois", access: "Illimite, multi-sieges, API." },
+  { value: "introduction", label: "Introduction", price: "Gratuit", access: "Pack Introduction, quota limité." },
+  { value: "goutte", label: "Goutte", price: "2 900 FCFA/mois", access: "Introduction + un pack au choix, téléchargements débloqués." },
+  { value: "source", label: "Source", price: "5 999 FCFA/mois", access: "Comme Goutte, quota plus généreux." },
+  { value: "fleuve", label: "Fleuve", price: "9 999 FCFA/mois", access: "Les deux packs débloqués." },
+  { value: "ocean", label: "Océan", price: "29 999 FCFA/mois", access: "Illimité, multi-sièges, API." },
 ];
 
 type QuotaHistoryRow = {
@@ -54,7 +54,7 @@ export default function SettingsPage() {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
       <div>
-        <h1>Parametres</h1>
+        <h1>Paramètres</h1>
         <p className="text-muted-foreground">Profil, abonnement et quotas.</p>
       </div>
 
@@ -127,7 +127,7 @@ export default function SettingsPage() {
                   <Progress value={wordsUsedPct} />
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  {quota.downloads_remaining.toLocaleString("fr-FR")} telechargements restants ce mois.
+                  {quota.downloads_remaining.toLocaleString("fr-FR")} téléchargements restants ce mois.
                 </p>
               </div>
             )}
@@ -169,7 +169,7 @@ function ProfilTab({
       });
       if (!res.ok) throw new Error("Enregistrement impossible.");
       await onSaved();
-      toast.success("Profil mis a jour");
+      toast.success("Profil mis à jour");
     } catch (err) {
       toast.error((err as Error).message);
     } finally {
@@ -179,7 +179,7 @@ function ProfilTab({
 
   async function handleChangePassword() {
     if (newPassword.length < 6) {
-      toast.error("Le mot de passe doit contenir au moins 6 caracteres.");
+      toast.error("Le mot de passe doit contenir au moins 6 caractères.");
       return;
     }
     setChangingPassword(true);
@@ -188,7 +188,7 @@ function ProfilTab({
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) throw error;
       setNewPassword("");
-      toast.success("Mot de passe mis a jour");
+      toast.success("Mot de passe mis à jour");
     } catch (err) {
       toast.error((err as Error).message);
     } finally {
@@ -218,7 +218,7 @@ function ProfilTab({
           <Input value={email ?? ""} disabled />
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label>Telephone</Label>
+          <Label>Téléphone</Label>
           <Input value={phoneValue} onChange={(e) => setPhoneValue(e.target.value)} />
         </div>
         <Button onClick={handleSave} disabled={saving} className="w-fit">
@@ -233,14 +233,14 @@ function ProfilTab({
           <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
         </div>
         <Button variant="outline" onClick={handleChangePassword} disabled={changingPassword} className="w-fit">
-          {changingPassword ? "Mise a jour..." : "Changer le mot de passe"}
+          {changingPassword ? "Mise à jour..." : "Changer le mot de passe"}
         </Button>
       </div>
 
       <div className="flex flex-col gap-3 rounded-[12px] border border-erreur/30 bg-erreur/5 p-5">
         <h3 className="text-erreur">Zone dangereuse</h3>
         <p className="text-sm text-muted-foreground">
-          La suppression de votre compte est definitive et efface tous vos documents et donnees.
+          La suppression de votre compte est définitive et efface tous vos documents et données.
         </p>
         <AlertDialog>
           <AlertDialogTrigger render={<Button variant="destructive" className="w-fit" />}>
@@ -248,9 +248,9 @@ function ProfilTab({
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Supprimer definitivement votre compte ?</AlertDialogTitle>
+              <AlertDialogTitle>Supprimer définitivement votre compte ?</AlertDialogTitle>
               <AlertDialogDescription>
-                Cette action est irreversible : documents, conversations et historique seront
+                Cette action est irréversible : documents, conversations et historique seront
                 perdus.
               </AlertDialogDescription>
             </AlertDialogHeader>
@@ -284,7 +284,7 @@ function QuotaHistory() {
           <span className="text-muted-foreground">{h.period}</span>
           <span>
             {h.words_used.toLocaleString("fr-FR")}/{h.words_limit.toLocaleString("fr-FR")} mots ·{" "}
-            {h.downloads_used}/{h.downloads_limit} telechargements
+            {h.downloads_used}/{h.downloads_limit} téléchargements
           </span>
         </div>
       ))}

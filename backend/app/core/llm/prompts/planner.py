@@ -4,29 +4,34 @@ from app.core.document_engine.schema import Outline
 
 DOC_TYPE_LABELS: dict[str, str] = {
     "rapport_stage": "rapport de stage",
-    "memoire": "memoire",
-    "these": "these",
-    "rapport": "rapport d'activite",
+    "memoire": "mémoire",
+    "these": "thèse",
+    "rapport": "rapport d'activité",
     "note": "note de service",
     "proposition": "proposition commerciale",
     "business_plan": "business plan",
-    "etude_de_cas": "etude de cas",
+    "etude_de_cas": "étude de cas",
     "analyse_swot": "analyse SWOT",
     "cahier_charges": "cahier des charges",
 }
 
 DEPTH_GUIDANCE: dict[str, str] = {
-    "essentiel": "Plan simple, 3 a 4 parties principales, pas de sous-parties.",
-    "detaille": "Plan avec parties et sous-parties (2 niveaux), 5 a 8 sections principales.",
-    "tres_detaille": "Plan complet avec chapitres, sections et sous-sections (3 niveaux).",
+    "essentiel": "Plan simple, 3 à 4 parties principales, pas de sous-parties.",
+    "detaille": "Plan avec parties et sous-parties (2 niveaux), 5 à 8 sections principales.",
+    "tres_detaille": (
+        "Plan complet avec chapitres, sections et sous-sections (3 niveaux), 8 à 12 "
+        "sections principales."
+    ),
 }
 
 SYSTEM_PROMPT = (
-    "Tu es un expert en structuration de documents francophones. Genere un plan "
-    "hierarchique adapte au type de document et a la profondeur demandee. Chaque section "
-    "a un id unique (ex: '1', '1.1', '1.2', '2'), un titre clair, un niveau (1, 2 ou 3), "
-    "et des sous-sections (children) le cas echeant. Reponds UNIQUEMENT en JSON strictement "
-    "valide conforme au schema suivant, sans aucun texte avant ou apres : {schema}"
+    "Tu es un assistant professionnel francophone spécialisé en structuration de documents. "
+    "Tu rédiges exclusivement en français. Génère un plan hiérarchique adapté au type de "
+    "document et à la profondeur demandée. Chaque section a un id unique (ex : '1', '1.1', "
+    "'1.2', '2'), un titre clair, un niveau (1, 2 ou 3), et des sous-sections (children) le "
+    "cas échéant.\n\n"
+    "Réponds UNIQUEMENT en JSON strictement valide conforme au schéma suivant, sans aucun "
+    "texte avant ou après : {schema}"
 )
 
 

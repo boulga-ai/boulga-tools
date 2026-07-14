@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ListTree, Send, Copy } from "lucide-react";
+import { ListTree, Send, Square } from "lucide-react";
 import { ToolLayout } from "@/components/tools/ToolLayout";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { CopyButton } from "@/components/tools/CopyButton";
+import { GenerationError } from "@/components/tools/GenerationError";
 import {
   Select,
   SelectContent,
@@ -22,21 +24,21 @@ import type { OutlineNode } from "@/lib/outline-tree";
 
 const DOC_TYPES = [
   { value: "rapport_stage", label: "Rapport de stage" },
-  { value: "memoire", label: "Memoire" },
-  { value: "these", label: "These" },
-  { value: "rapport", label: "Rapport d'activite" },
+  { value: "memoire", label: "Mémoire" },
+  { value: "these", label: "Thèse" },
+  { value: "rapport", label: "Rapport d'activité" },
   { value: "note", label: "Note de service" },
   { value: "proposition", label: "Proposition commerciale" },
   { value: "business_plan", label: "Business plan" },
-  { value: "etude_de_cas", label: "Etude de cas" },
+  { value: "etude_de_cas", label: "Étude de cas" },
   { value: "analyse_swot", label: "Analyse SWOT" },
   { value: "cahier_charges", label: "Cahier des charges" },
 ];
 
 const DEPTHS = [
-  { value: "essentiel", label: "Essentiel" },
-  { value: "detaille", label: "Detaille" },
-  { value: "tres_detaille", label: "Tres detaille" },
+  { value: "essentiel", label: "Résumé (3-4 sections)" },
+  { value: "detaille", label: "Standard (5-8 sections)" },
+  { value: "tres_detaille", label: "Détaillé (8-12 sections)" },
 ];
 
 export default function PlanGeneratorPage() {
@@ -46,7 +48,7 @@ export default function PlanGeneratorPage() {
   const [docType, setDocType] = useState("rapport");
   const [depth, setDepth] = useState("detaille");
   const [tree, setTree] = useState<OutlineNode[] | null>(null);
-  const { isStreaming, error, start } = useStreaming();
+  const { isStreaming, error, isQuotaError, start, stop } = useStreaming();
 
   async function handleGenerate() {
     if (!subject.trim()) return;
@@ -64,7 +66,7 @@ export default function PlanGeneratorPage() {
             const parsed = JSON.parse(generatedText);
             setTree(parsed.sections ?? []);
           } catch {
-            toast.error("Le plan genere n'a pas pu etre interprete. Reessayez.");
+            toast.error("Le plan généré n'a pas pu être interprété. Réessayez.");
           }
         },
       },
@@ -77,12 +79,6 @@ export default function PlanGeneratorPage() {
       .join("\n");
   }
 
-  function handleCopy() {
-    if (!tree) return;
-    navigator.clipboard.writeText(planAsText(tree));
-    toast.success("Plan copie");
-  }
-
   function sendTo(destination: "pro-doc-writer" | "academic-writer") {
     if (!tree) return;
     setPendingOutline(tree);
@@ -91,13 +87,18 @@ export default function PlanGeneratorPage() {
 
   return (
     <ToolLayout
-      title="Generateur de plan"
-      description="Transforme un sujet en structure detaillee, avant redaction complete."
+      title="Générateur de plan"
+      description="Transforme un sujet en structure détaillée, avant rédaction complète."
     >
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
           <Label>Sujet</Label>
-          <Textarea value={subject} onChange={(e) => setSubject(e.target.value)} className="min-h-20" />
+          <Textarea
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+            placeholder="Décrivez le sujet ou le thème de votre document..."
+            className="min-h-20"
+          />
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -133,27 +134,33 @@ export default function PlanGeneratorPage() {
           </div>
         </div>
 
-        <Button onClick={handleGenerate} disabled={isStreaming || !subject.trim()} className="w-fit">
-          <ListTree className="size-4" />
-          {isStreaming ? "Generation en cours..." : "Generer le plan"}
-        </Button>
-        {error && <p className="text-sm text-erreur">{error}</p>}
+        <div className="flex items-center gap-2">
+          <Button onClick={handleGenerate} disabled={isStreaming || !subject.trim()} className="w-fit">
+            <ListTree className="size-4" />
+            {isStreaming ? "Génération en cours..." : "Générer le plan"}
+          </Button>
+          {isStreaming && (
+            <Button variant="outline" onClick={stop} className="w-fit">
+              <Square className="size-4" />
+              Arrêter
+            </Button>
+          )}
+        </div>
+        {error && <GenerationError message={error} isQuotaError={isQuotaError} onRetry={handleGenerate} />}
 
         {tree && (
           <div className="flex flex-col gap-3 border-t pt-6">
             <OutlineTree tree={tree} onChange={setTree} />
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={handleGenerate}>
-                Regenerer tout
+                Régénérer le plan
               </Button>
-              <Button variant="outline" onClick={handleCopy}>
-                <Copy className="size-4" /> Copier le plan
-              </Button>
+              <CopyButton text={planAsText(tree)} label="Copier le plan" variant="outline" />
               <Button variant="outline" onClick={() => sendTo("pro-doc-writer")}>
-                <Send className="size-4" /> Envoyer vers le Redacteur de document pro
+                <Send className="size-4" /> Utiliser ce plan → Document professionnel
               </Button>
               <Button variant="outline" onClick={() => sendTo("academic-writer")}>
-                <Send className="size-4" /> Envoyer vers le Redacteur academique
+                <Send className="size-4" /> Utiliser ce plan → Document académique
               </Button>
             </div>
           </div>

@@ -7,24 +7,24 @@ export type Tool = {
   label: string;
   description: string;
   href: string;
-  icon: string; // nom d'icone lucide-react
+  icon: string; // nom d'icône lucide-react
   pack: ToolPack;
   access: ToolAccess;
 };
 
 export const PACK_LABELS: Record<ToolPack, string> = {
   gratuit: "Outils gratuits",
-  redaction: "Redaction",
-  documents: "Documents avances",
+  redaction: "Rédaction",
+  documents: "Documents avancés",
 };
 
 export const ACCESS_BADGES: Record<ToolAccess, { label: string; className: string }> = {
   libre: {
-    label: "Gratuit et illimite",
+    label: "Gratuit et illimité",
     className: "bg-succes/10 text-succes",
   },
   gratuit_inscription: {
-    label: "Gratuit des l'inscription",
+    label: "Gratuit dès l'inscription",
     className: "bg-succes/10 text-succes",
   },
   score_gratuit: {
@@ -32,7 +32,7 @@ export const ACCESS_BADGES: Record<ToolAccess, { label: string; className: strin
     className: "bg-succes/10 text-succes",
   },
   des_goutte: {
-    label: "Des le palier Goutte",
+    label: "Dès le palier Goutte",
     className: "bg-blue-50 text-bleu-boulga",
   },
 };
@@ -41,7 +41,7 @@ export const TOOLS: Tool[] = [
   {
     id: "converter",
     label: "Convertisseur de fichiers",
-    description: "Convertit PDF, Word, Excel, PowerPoint et images, avec fusion et separation de PDF.",
+    description: "Convertit PDF, Word, Excel, PowerPoint et images, avec fusion et séparation de PDF.",
     href: "/tools/converter",
     icon: "ArrowRightLeft",
     pack: "gratuit",
@@ -49,8 +49,8 @@ export const TOOLS: Tool[] = [
   },
   {
     id: "ai-detector",
-    label: "Detecteur de contenu IA",
-    description: "Estime la probabilite qu'un texte ait ete genere par une IA.",
+    label: "Détecteur de contenu IA",
+    description: "Estime la probabilité qu'un texte ait été généré par une IA.",
     href: "/tools/ai-detector",
     icon: "ScanSearch",
     pack: "gratuit",
@@ -58,8 +58,8 @@ export const TOOLS: Tool[] = [
   },
   {
     id: "plagiarism",
-    label: "Verificateur de plagiat",
-    description: "Estime le taux de contenu potentiellement plagie dans un texte.",
+    label: "Vérificateur de plagiat",
+    description: "Estime le taux de contenu potentiellement plagié dans un texte.",
     href: "/tools/plagiarism",
     icon: "Shield",
     pack: "gratuit",
@@ -68,7 +68,7 @@ export const TOOLS: Tool[] = [
   {
     id: "reformulator",
     label: "Reformulateur / Correcteur",
-    description: "Reformule, corrige, simplifie ou academise un texte selon le ton voulu.",
+    description: "Reformule, corrige, simplifie ou académise un texte selon le ton voulu.",
     href: "/tools/reformulator",
     icon: "RefreshCw",
     pack: "redaction",
@@ -76,8 +76,8 @@ export const TOOLS: Tool[] = [
   },
   {
     id: "email-writer",
-    label: "Redacteur d'email pro",
-    description: "Genere un email professionnel complet a partir d'un contexte.",
+    label: "Rédacteur d'email pro",
+    description: "Génère un email professionnel complet à partir d'un contexte.",
     href: "/tools/email-writer",
     icon: "Mail",
     pack: "redaction",
@@ -86,7 +86,7 @@ export const TOOLS: Tool[] = [
   {
     id: "chat",
     label: "Chat IA",
-    description: "Espace de conversation libre avec l'IA, borne par un quota de mots.",
+    description: "Espace de conversation libre avec l'IA, borné par un quota de mots.",
     href: "/tools/chat",
     icon: "MessageSquare",
     pack: "redaction",
@@ -94,8 +94,8 @@ export const TOOLS: Tool[] = [
   },
   {
     id: "social-posts",
-    label: "Posts reseaux sociaux",
-    description: "Genere des publications adaptees a chaque reseau social.",
+    label: "Posts réseaux sociaux",
+    description: "Génère des publications adaptées à chaque réseau social.",
     href: "/tools/social-posts",
     icon: "Share2",
     pack: "redaction",
@@ -104,7 +104,7 @@ export const TOOLS: Tool[] = [
   {
     id: "speech-writer",
     label: "Discours et pitchs",
-    description: "Redige un discours, un pitch commercial ou une preparation de soutenance.",
+    description: "Rédige un discours, un pitch commercial ou une préparation de soutenance.",
     href: "/tools/speech-writer",
     icon: "Mic",
     pack: "redaction",
@@ -112,8 +112,8 @@ export const TOOLS: Tool[] = [
   },
   {
     id: "cv-writer",
-    label: "Redacteur de CV",
-    description: "Construit un CV professionnel a partir de votre parcours.",
+    label: "Rédacteur de CV",
+    description: "Construit un CV professionnel à partir de votre parcours.",
     href: "/tools/cv-writer",
     icon: "FileUser",
     pack: "documents",
@@ -122,7 +122,7 @@ export const TOOLS: Tool[] = [
   {
     id: "cover-letter",
     label: "Lettre de motivation",
-    description: "Genere une lettre de motivation adaptee au poste vise.",
+    description: "Génère une lettre de motivation adaptée au poste visé.",
     href: "/tools/cover-letter",
     icon: "FileHeart",
     pack: "documents",
@@ -130,8 +130,8 @@ export const TOOLS: Tool[] = [
   },
   {
     id: "plan-generator",
-    label: "Generateur de plan",
-    description: "Transforme un sujet en structure detaillee, avant redaction complete.",
+    label: "Générateur de plan",
+    description: "Transforme un sujet en structure détaillée, avant rédaction complète.",
     href: "/tools/plan-generator",
     icon: "ListTree",
     pack: "documents",
@@ -140,7 +140,7 @@ export const TOOLS: Tool[] = [
   {
     id: "pro-doc-writer",
     label: "Document professionnel",
-    description: "Genere rapports, offres commerciales, business plans et etudes de cas.",
+    description: "Génère rapports, offres commerciales, business plans et études de cas.",
     href: "/tools/pro-doc-writer",
     icon: "Briefcase",
     pack: "documents",
@@ -148,8 +148,8 @@ export const TOOLS: Tool[] = [
   },
   {
     id: "academic-writer",
-    label: "Document academique",
-    description: "Redige rapport de stage, memoire ou these via un parcours guide en 7 etapes.",
+    label: "Document académique",
+    description: "Rédige rapport de stage, mémoire ou thèse via un parcours guidé en 7 étapes.",
     href: "/tools/academic-writer",
     icon: "GraduationCap",
     pack: "documents",

@@ -1,14 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
-import { Mail, Copy, Clock } from "lucide-react";
+import { ChevronRight, Clock, Mail, Square } from "lucide-react";
 import { ToolLayout } from "@/components/tools/ToolLayout";
-import { StreamingOutput } from "@/components/tools/StreamingOutput";
+import { EmailOutput } from "@/components/tools/EmailOutput";
+import { GenerationError } from "@/components/tools/GenerationError";
+import { RefineBar } from "@/components/tools/RefineBar";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   Select,
   SelectContent,
@@ -18,30 +24,25 @@ import {
 } from "@/components/ui/select";
 import { useStreaming } from "@/hooks/useStreaming";
 import { apiFetch } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 const TONES = [
-  { value: "convivial", label: "Convivial" },
-  { value: "academique", label: "Academique" },
   { value: "professionnel", label: "Professionnel" },
+  { value: "convivial", label: "Convivial" },
+  { value: "formel", label: "Formel" },
   { value: "neutre", label: "Neutre" },
-  { value: "persuasif", label: "Persuasif" },
-  { value: "formel", label: "Formel / Soutenu" },
 ];
 
 type HistoryItem = { id: string; title: string; created_at: string };
 
 export default function EmailWriterPage() {
-  const [context, setContext] = useState("");
-  const [recipient, setRecipient] = useState("");
-  const [objective, setObjective] = useState("");
-  const [tone, setTone] = useState<string | undefined>(undefined);
+  const [description, setDescription] = useState("");
+  const [tone, setTone] = useState("professionnel");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [subject, setSubject] = useState("");
+  const [extraDetails, setExtraDetails] = useState("");
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  const { text: output, isStreaming, error, start, setText } = useStreaming();
-
-  async function loadHistory() {
-    const res = await apiFetch("/api/v1/tools/transformers/email-writer/history");
-    if (res.ok) setHistory(await res.json());
-  }
+  const { text: output, isStreaming, error, isQuotaError, start, stop, setText } = useStreaming();
 
   useEffect(() => {
     apiFetch("/api/v1/tools/transformers/email-writer/history").then((res) => {
@@ -49,15 +50,32 @@ export default function EmailWriterPage() {
     });
   }, []);
 
+  async function refreshHistory() {
+    const res = await apiFetch("/api/v1/tools/transformers/email-writer/history");
+    if (res.ok) setHistory(await res.json());
+  }
+
   async function handleSubmit() {
-    if (!context.trim() || !recipient.trim() || !objective.trim()) return;
+    if (!description.trim()) return;
     await start("/api/v1/tools/transformers/email-writer", {
-      context,
-      recipient,
-      objective,
+      description,
       tone,
+      subject: subject || undefined,
+      extra_details: extraDetails || undefined,
     });
-    loadHistory();
+    refreshHistory();
+  }
+
+  async function handleRefine(instruction: string) {
+    await start("/api/v1/tools/transformers/email-writer", {
+      description,
+      tone,
+      subject: subject || undefined,
+      extra_details: extraDetails || undefined,
+      previous_output: output,
+      refine_instruction: instruction,
+    });
+    refreshHistory();
   }
 
   async function openHistoryItem(id: string) {
@@ -70,16 +88,10 @@ export default function EmailWriterPage() {
     if (assistantMessage) setText(assistantMessage.content);
   }
 
-  function handleCopy() {
-    if (!output) return;
-    navigator.clipboard.writeText(output);
-    toast.success("Email copie");
-  }
-
   return (
     <ToolLayout
-      title="Redacteur d'email pro"
-      description="Genere un email professionnel complet a partir d'un contexte et d'un objectif."
+      title="Rédacteur d'email pro"
+      description="Décrivez la situation, l'IA rédige un email professionnel complet."
     >
       <div className="grid flex-1 grid-cols-1 gap-4 lg:grid-cols-[220px_1fr_1fr]">
         <div className="order-3 flex flex-col gap-2 lg:order-1">
@@ -89,7 +101,7 @@ export default function EmailWriterPage() {
           </p>
           <div className="flex flex-col gap-1">
             {history.length === 0 && (
-              <p className="text-sm text-muted-foreground">Aucun email genere pour le moment.</p>
+              <p className="text-sm text-muted-foreground">Aucun email généré pour le moment.</p>
             )}
             {history.map((item) => (
               <button
@@ -105,39 +117,21 @@ export default function EmailWriterPage() {
 
         <div className="order-1 flex flex-col gap-3 lg:order-2">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="context">Contexte</Label>
+            <Label htmlFor="description">Décrivez l&apos;email que vous souhaitez rédiger</Label>
             <Textarea
-              id="context"
-              value={context}
-              onChange={(e) => setContext(e.target.value)}
-              placeholder="Decrivez la situation..."
-              className="min-h-24"
+              id="description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Ex : Je dois relancer un client qui n'a pas payé sa facture depuis 3 semaines, c'est ma deuxième relance..."
+              className="min-h-32"
             />
           </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="recipient">Destinataire</Label>
-            <Input
-              id="recipient"
-              value={recipient}
-              onChange={(e) => setRecipient(e.target.value)}
-              placeholder="Client, partenaire, recruteur..."
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="objective">Objectif de l&apos;email</Label>
-            <Textarea
-              id="objective"
-              value={objective}
-              onChange={(e) => setObjective(e.target.value)}
-              placeholder="Relancer une facture impayee, remercier, refuser poliment..."
-              className="min-h-20"
-            />
-          </div>
+
           <div className="flex flex-col gap-1.5">
             <Label>Ton</Label>
-            <Select value={tone} onValueChange={(value) => setTone(value ?? undefined)}>
+            <Select value={tone} onValueChange={(value) => value && setTone(value)}>
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Ton (optionnel)" />
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 {TONES.map((t) => (
@@ -148,23 +142,58 @@ export default function EmailWriterPage() {
               </SelectContent>
             </Select>
           </div>
-          <Button
-            onClick={handleSubmit}
-            disabled={isStreaming || !context.trim() || !recipient.trim() || !objective.trim()}
-            className="w-fit"
-          >
-            <Mail className="size-4" />
-            {isStreaming ? "Redaction en cours..." : "Rediger l'email"}
-          </Button>
+
+          <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+            <CollapsibleTrigger className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+              <ChevronRight className={cn("size-3.5 transition-transform", advancedOpen && "rotate-90")} />
+              Options avancées
+            </CollapsibleTrigger>
+            <CollapsibleContent className="flex flex-col gap-3 pt-3">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="subject">Objet de l&apos;email (optionnel)</Label>
+                <Input
+                  id="subject"
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  placeholder="Laissez vide pour que l'IA le génère"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="extraDetails">Précisions supplémentaires (optionnel)</Label>
+                <Textarea
+                  id="extraDetails"
+                  value={extraDetails}
+                  onChange={(e) => setExtraDetails(e.target.value)}
+                  className="min-h-16"
+                />
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+
+          <div className="flex items-center gap-2">
+            <Button onClick={handleSubmit} disabled={isStreaming || !description.trim()} className="w-fit">
+              <Mail className="size-4" />
+              {isStreaming ? "Rédaction en cours..." : "Rédiger l'email"}
+            </Button>
+            {isStreaming && (
+              <Button variant="outline" onClick={stop} className="w-fit">
+                <Square className="size-4" />
+                Arrêter
+              </Button>
+            )}
+          </div>
         </div>
 
         <div className="order-2 flex flex-col gap-3 lg:order-3">
-          <StreamingOutput text={output} isStreaming={isStreaming} />
-          {error && <p className="text-sm text-erreur">{error}</p>}
-          <Button variant="outline" onClick={handleCopy} disabled={!output} className="w-fit">
-            <Copy className="size-4" />
-            Copier
-          </Button>
+          <EmailOutput text={output} isStreaming={isStreaming} onRegenerate={handleSubmit} />
+          {error && <GenerationError message={error} isQuotaError={isQuotaError} onRetry={handleSubmit} />}
+          {output && !isStreaming && (
+            <RefineBar
+              presets={["Plus court", "Plus long", "Plus formel", "Plus direct"]}
+              onRefine={handleRefine}
+              disabled={isStreaming}
+            />
+          )}
         </div>
       </div>
     </ToolLayout>

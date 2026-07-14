@@ -1,19 +1,16 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
-DocType = Literal["cv", "cover_letter", "pro_doc", "academic"]
 DocFormat = Literal["docx", "pdf"]
 
 
 class RenderRequest(BaseModel):
-    content_json: dict
-    doc_type: DocType
+    """Rend un document deja genere (content_json deja persiste) dans un template et
+    un format donnes. Ne rappelle jamais le LLM — voir POST /documents/{doc_type}/generate
+    pour la generation elle-meme. title, si fourni, remplace le titre du document
+    (le user a pu le modifier apres generation — voir DocumentWorkspace.tsx)."""
+
     template: str
     format: DocFormat
-    title: str = Field(min_length=1, max_length=200)
-
-
-class RerenderRequest(BaseModel):
-    template: str
-    format: DocFormat
+    title: str | None = None

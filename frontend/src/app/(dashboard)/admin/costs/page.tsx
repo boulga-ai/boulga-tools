@@ -51,8 +51,8 @@ export default function AdminCostsPage() {
     <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1>Couts</h1>
-          <p className="text-muted-foreground">Cout reel par outil, palier et modele.</p>
+          <h1>Coûts</h1>
+          <p className="text-muted-foreground">Coût réel par outil, palier et modèle.</p>
         </div>
         <Select value={period} onValueChange={(v) => v && setPeriod(v)}>
           <SelectTrigger className="w-48">
@@ -74,12 +74,12 @@ export default function AdminCostsPage() {
             <TableRow>
               <TableHead>Outil</TableHead>
               <TableHead>Palier</TableHead>
-              <TableHead>Modele</TableHead>
-              <TableHead className="text-right">Generations</TableHead>
+              <TableHead>Modèle</TableHead>
+              <TableHead className="text-right">Générations</TableHead>
               <TableHead className="text-right">Tokens in</TableHead>
               <TableHead className="text-right">Tokens out</TableHead>
-              <TableHead className="text-right">Cout total</TableHead>
-              <TableHead className="text-right">Cout moyen</TableHead>
+              <TableHead className="text-right">Coût total</TableHead>
+              <TableHead className="text-right">Coût moyen</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -98,7 +98,7 @@ export default function AdminCostsPage() {
             {rows.length === 0 && (
               <TableRow>
                 <TableCell colSpan={8} className="text-center text-muted-foreground">
-                  Aucune donnee sur cette periode.
+                  Aucune donnée sur cette période.
                 </TableCell>
               </TableRow>
             )}

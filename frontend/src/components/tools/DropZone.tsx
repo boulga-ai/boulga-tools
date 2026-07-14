@@ -8,7 +8,7 @@ export function DropZone({
   onFiles,
   multiple = false,
   accept,
-  label = "Glissez-deposez un fichier, ou",
+  label = "Glissez-déposez un fichier, ou",
 }: {
   onFiles: (files: FileList) => void;
   multiple?: boolean;

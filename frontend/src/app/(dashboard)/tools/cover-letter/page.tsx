@@ -1,279 +1,202 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Sparkles, Download, Import } from "lucide-react";
+import { Import, Sparkles } from "lucide-react";
 import { ToolLayout } from "@/components/tools/ToolLayout";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
+import { DocumentWorkspace, type DocumentWorkspaceHandle } from "@/components/tools/DocumentWorkspace";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { SuggestionsPanel, type AnalysisResult } from "@/components/tools/SuggestionsPanel";
-import { TemplateSelector } from "@/components/tools/TemplateSelector";
-import { FormatSelector } from "@/components/tools/FormatSelector";
-import { CoverLetterPreview } from "@/components/tools/DocumentPreview";
 import { useAuth } from "@/hooks/useAuth";
-import { useStreaming } from "@/hooks/useStreaming";
 import { apiFetch } from "@/lib/api";
 import { useToolStore } from "@/stores/toolStore";
-import type { CoverLetterContent } from "@/lib/document-types";
+import type { DocBlock } from "@/types/document-engine";
 
 const LETTER_TEMPLATES = [
-  { value: "letter_standard", label: "Standard", description: "Format lettre classique francaise." },
-  { value: "letter_modern", label: "Moderne", description: "Bande marine, mise en page aeree." },
+  { value: "letter_standard", label: "Standard", description: "Format lettre classique française." },
+  { value: "letter_modern", label: "Moderne", description: "Bande marine, mise en page aérée." },
 ];
 
-const TONES = ["Formel", "Professionnel", "Dynamique"];
+const DISMISS_KEY = "boulga:cv-import-banner-dismissed";
+
+function asStr(v: unknown): string {
+  return typeof v === "string" ? v : "";
+}
+
+type CVChoice = { id: string; title: string; created_at: string };
 
 export default function CoverLetterPage() {
   const { user, profile } = useAuth();
-  const lastCV = useToolStore((s) => s.lastCV);
-
-  const [targetRole, setTargetRole] = useState("");
-  const [companyName, setCompanyName] = useState("");
-  const [recipientName, setRecipientName] = useState("");
-  const [background, setBackground] = useState("");
-  const [motivation, setMotivation] = useState("");
-  const [strengths, setStrengths] = useState("");
-  const [tone, setTone] = useState("Professionnel");
-  const [fullName, setFullName] = useState(profile?.full_name ?? "");
-  const [email, setEmail] = useState(user?.email ?? "");
-
-  const [analyzing, setAnalyzing] = useState(false);
-  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
-  const [content, setContent] = useState<CoverLetterContent | null>(null);
-  const { text: rawOutput, isStreaming, error, start } = useStreaming();
-
-  const [template, setTemplate] = useState("letter_standard");
-  const [format, setFormat] = useState<"docx" | "pdf">("pdf");
-  const [downloading, setDownloading] = useState(false);
-
+  const lastCVBlocks = useToolStore((s) => s.lastCVBlocks);
+  const setLastCVBlocks = useToolStore((s) => s.setLastCVBlocks);
+  const [importingCV, setImportingCV] = useState(false);
+  const [cvAvailableFromBackend, setCvAvailableFromBackend] = useState(false);
+  const cvAvailable = !!lastCVBlocks || cvAvailableFromBackend;
+  const [bannerDismissed, setBannerDismissed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(DISMISS_KEY) === "true";
+  });
+  const [cvChoices, setCvChoices] = useState<CVChoice[] | null>(null);
+  const workspaceRef = useRef<DocumentWorkspaceHandle>(null);
   const available = profile ? profile.current_tier !== "introduction" : false;
 
-  function importFromCV() {
-    if (!lastCV) return;
-    setFullName(lastCV.full_name);
-    setEmail(lastCV.contact.email);
-    setBackground(
-      lastCV.experiences.map((exp) => `${exp.title} chez ${exp.company} : ${exp.description}`).join("\n"),
-    );
-    setStrengths(lastCV.skills.join(", "));
-    toast.success("Informations importees depuis votre CV");
+  // Detecte simplement si un CV existe en base (le cas "en memoire" est deja couvert
+  // par lastCVBlocks ci-dessus), sans rien injecter — le user choisit ensuite via le
+  // bandeau ou le bouton "Importer".
+  useEffect(() => {
+    if (lastCVBlocks) return;
+    apiFetch("/api/v1/documents/latest/cv").then((res) => setCvAvailableFromBackend(res.ok));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function dismissBanner() {
+    setBannerDismissed(true);
+    if (typeof window !== "undefined") window.localStorage.setItem(DISMISS_KEY, "true");
   }
 
-  function formData() {
-    return {
-      target_role: targetRole,
-      full_name: fullName,
-      contact: { email },
-      company_name: companyName,
-      recipient_name: recipientName || undefined,
-      background,
-      motivation,
-      strengths,
-      tone,
-    };
-  }
+  function applyCVBlocks(blocks: DocBlock[]) {
+    const contact = blocks.find((b) => b.type === "contact");
+    const experiences = blocks.filter((b) => b.type === "experience").slice(0, 2);
+    const skillGroups = blocks.filter((b) => b.type === "skill_group");
 
-  async function handleAnalyze() {
-    setAnalyzing(true);
-    try {
-      const res = await apiFetch("/api/v1/tools/generators/cover-letter/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData()),
-      });
-      if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail ?? "Analyse impossible.");
-      setAnalysis(await res.json());
-    } catch (err) {
-      toast.error("Analyse impossible", { description: (err as Error).message });
-    } finally {
-      setAnalyzing(false);
-    }
-  }
+    const expText = experiences.map((e) => `${asStr(e.position)} chez ${asStr(e.company)}`).join(", ");
+    const skillsText = skillGroups
+      .flatMap((g) => (Array.isArray(g.skills) ? (g.skills as string[]) : []))
+      .slice(0, 5)
+      .join(", ");
+    const relevant = [expText && `mon expérience (${expText})`, skillsText && `mes compétences en ${skillsText}`]
+      .filter(Boolean)
+      .join(" et ");
 
-  async function handleGenerate() {
-    setContent(null);
-    let generatedText = "";
-    await start("/api/v1/tools/generators/cover-letter", formData(), {
-      onDelta: (delta) => {
-        generatedText += delta;
-      },
-      onDone: () => {
-        try {
-          setContent(JSON.parse(generatedText));
-        } catch {
-          toast.error("La lettre generee n'a pas pu etre interpretee. Reessayez.");
-        }
-      },
+    workspaceRef.current?.mergeCadrage({
+      full_name: contact ? asStr(contact.full_name) : "",
+      email: contact ? asStr(contact.email) : "",
+      target_role: contact ? asStr(contact.title) : "",
     });
+    workspaceRef.current?.appendText(
+      `D'après mon CV, voici ce qui semble pertinent pour ce poste : ${relevant || "mon parcours"}.`,
+    );
+    dismissBanner();
+    setCvChoices(null);
   }
 
-  async function handleDownload() {
-    if (!content) return;
-    setDownloading(true);
+  async function loadCVById(id: string) {
+    const res = await apiFetch(`/api/v1/documents/${id}`);
+    if (!res.ok) {
+      toast.error("CV introuvable.");
+      return;
+    }
+    const doc = await res.json();
+    const blocks = (doc.content_json?.blocks ?? []) as DocBlock[];
+    setLastCVBlocks(blocks);
+    applyCVBlocks(blocks);
+    toast.success("Informations importées depuis votre CV");
+  }
+
+  async function importFromCV() {
+    setImportingCV(true);
     try {
-      const res = await apiFetch("/api/v1/documents/render", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          content_json: content,
-          doc_type: "cover_letter",
-          template,
-          format,
-          title: `Lettre de motivation - ${content.company_name}`,
-        }),
-      });
-      if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail ?? "Telechargement impossible.");
-      const data = await res.json();
-      window.open(data.url, "_blank");
-    } catch (err) {
-      toast.error("Telechargement impossible", { description: (err as Error).message });
+      if (lastCVBlocks) {
+        applyCVBlocks(lastCVBlocks);
+        toast.success("Informations importées depuis votre CV");
+        return;
+      }
+      const res = await apiFetch("/api/v1/documents?tool=cv");
+      if (!res.ok) {
+        toast.error("Aucun CV trouvé. Créez d'abord un CV.");
+        return;
+      }
+      const list: CVChoice[] = await res.json();
+      if (list.length === 0) {
+        toast.error("Aucun CV trouvé. Créez d'abord un CV.");
+        return;
+      }
+      if (list.length === 1) {
+        await loadCVById(list[0].id);
+        return;
+      }
+      setCvChoices(list);
     } finally {
-      setDownloading(false);
+      setImportingCV(false);
     }
   }
 
   return (
     <ToolLayout
       title="Lettre de motivation"
-      description="Genere une lettre de motivation adaptee au poste vise."
+      description="Décrivez votre motivation, l'IA rédige et vous propose d'affiner."
       badge={
         !available ? (
           <span className="w-fit rounded-[4px] bg-blue-50 px-2 py-0.5 text-xs font-medium text-bleu-boulga">
-            Des le palier Goutte
+            Dès le palier Goutte
           </span>
         ) : undefined
       }
     >
       {!available ? (
         <div className="flex flex-col items-center gap-3 rounded-[12px] border border-dashed p-12 text-center text-muted-foreground">
-          <p>Cet outil necessite un abonnement a partir du palier Goutte.</p>
+          <p>Cet outil nécessite un abonnement à partir du palier Goutte.</p>
           <a href="/settings">
             <Button variant="outline">Voir les paliers</Button>
           </a>
         </div>
       ) : (
-        <div className="flex flex-col gap-6">
-          {lastCV && (
-            <Button variant="outline" onClick={importFromCV} className="w-fit">
-              <Import className="size-4" />
-              Importer depuis mon CV
-            </Button>
-          )}
-
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="flex flex-col gap-1.5">
-              <Label>Poste vise</Label>
-              <Input value={targetRole} onChange={(e) => setTargetRole(e.target.value)} />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>Entreprise</Label>
-              <Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>Recruteur (optionnel)</Label>
-              <Input value={recipientName} onChange={(e) => setRecipientName(e.target.value)} />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>Ton</Label>
-              <Select value={tone} onValueChange={(v) => v && setTone(v)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TONES.map((t) => (
-                    <SelectItem key={t} value={t}>
-                      {t}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>Nom complet</Label>
-              <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label>Email</Label>
-              <Input value={email} onChange={(e) => setEmail(e.target.value)} />
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label>Parcours</Label>
-            <Textarea
-              value={background}
-              onChange={(e) => setBackground(e.target.value)}
-              placeholder="Votre experience et vos competences pertinentes..."
-              className="min-h-24"
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label>Motivation</Label>
-            <Textarea
-              value={motivation}
-              onChange={(e) => setMotivation(e.target.value)}
-              placeholder="Pourquoi ce poste, pourquoi cette entreprise..."
-              className="min-h-20"
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label>Points forts</Label>
-            <Textarea
-              value={strengths}
-              onChange={(e) => setStrengths(e.target.value)}
-              className="min-h-16"
-            />
-          </div>
-
-          <div className="flex gap-3">
-            <Button variant="outline" onClick={handleAnalyze} disabled={analyzing}>
-              <Sparkles className="size-4" />
-              {analyzing ? "Analyse en cours..." : "Analyser mes informations"}
-            </Button>
-            <Button onClick={handleGenerate} disabled={isStreaming || !fullName.trim() || !companyName.trim()}>
-              {isStreaming ? "Generation en cours..." : "Generer la lettre"}
-            </Button>
-          </div>
-
-          {analysis && <SuggestionsPanel analysis={analysis} />}
-          {error && <p className="text-sm text-erreur">{error}</p>}
-
-          {(isStreaming || content) && (
-            <div className="flex flex-col gap-4 border-t pt-6">
-              <h3>Apercu</h3>
-              {content ? (
-                <CoverLetterPreview content={content} />
-              ) : (
-                <div className="min-h-32 whitespace-pre-wrap rounded-[12px] border bg-card p-4 text-xs text-muted-foreground">
-                  {rawOutput}
-                </div>
-              )}
-
-              {content && (
-                <div className="flex flex-col gap-3 border-t pt-4">
-                  <Label>Modele</Label>
-                  <TemplateSelector options={LETTER_TEMPLATES} value={template} onChange={setTemplate} />
-                  <div className="flex items-center gap-3">
-                    <FormatSelector value={format} onChange={setFormat} />
-                    <Button onClick={handleDownload} disabled={downloading}>
-                      <Download className="size-4" />
-                      {downloading ? "Preparation..." : "Telecharger"}
+        <DocumentWorkspace
+          ref={workspaceRef}
+          docType="cover_letter"
+          storageKey="boulga:workspace:cover_letter"
+          beforeCadrage={
+            <div className="flex flex-col gap-3">
+              {cvAvailable && !bannerDismissed && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-[10px] border border-bleu-boulga/30 bg-blue-50 p-3">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Sparkles className="size-4 shrink-0 text-bleu-boulga" />
+                    <span>Un CV récent a été trouvé. Utiliser ces informations pour pré-remplir ?</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" onClick={importFromCV} disabled={importingCV}>
+                      Utiliser
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={dismissBanner}>
+                      Non merci
                     </Button>
                   </div>
                 </div>
               )}
+              <Button variant="outline" onClick={importFromCV} disabled={importingCV} className="w-fit">
+                <Import className="size-4" />
+                {importingCV ? "Import en cours..." : "Importer depuis mon CV"}
+              </Button>
+              {cvChoices && (
+                <div className="flex flex-col gap-1.5 rounded-[10px] border p-3">
+                  <p className="text-xs font-medium uppercase text-muted-foreground">Plusieurs CV trouvés — choisissez</p>
+                  {cvChoices.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => loadCVById(c.id)}
+                      className="flex items-center justify-between rounded-[6px] px-2 py-1.5 text-left text-sm hover:bg-accent"
+                    >
+                      <span className="truncate">{c.title}</span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {new Date(c.created_at).toLocaleDateString("fr-FR")}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          }
+          cadrageFields={[
+            { key: "target_role", label: "Poste visé" },
+            { key: "company_name", label: "Entreprise" },
+            { key: "full_name", label: "Nom complet" },
+            { key: "email", label: "Email", type: "email" },
+          ]}
+          textareaLabel="Pourquoi postulez-vous ?"
+          textareaPlaceholder="Décrivez ce qui vous motive pour ce poste et cette entreprise, ce que vous pensez apporter, et collez le texte de l'offre si vous en avez une."
+          templates={LETTER_TEMPLATES}
+          initialState={{ cadrage: { full_name: profile?.full_name ?? "", email: user?.email ?? "" } }}
+        />
       )}
     </ToolLayout>
   );

@@ -98,11 +98,11 @@ export default function AdminUsersPage() {
       body: JSON.stringify({ tier }),
     });
     if (res.ok) {
-      toast.success("Palier mis a jour");
+      toast.success("Palier mis à jour");
       openDetail(selectedId);
       loadUsers();
     } else {
-      toast.error("Mise a jour impossible");
+      toast.error("Mise à jour impossible");
     }
   }
 
@@ -110,10 +110,10 @@ export default function AdminUsersPage() {
     if (!selectedId) return;
     const res = await apiFetch(`/api/v1/admin/users/${selectedId}/reset-quota`, { method: "POST" });
     if (res.ok) {
-      toast.success("Quota reinitialise");
+      toast.success("Quota réinitialisé");
       openDetail(selectedId);
     } else {
-      toast.error("Reinitialisation impossible");
+      toast.error("Réinitialisation impossible");
     }
   }
 
@@ -169,7 +169,7 @@ export default function AdminUsersPage() {
         <span>{total} utilisateur(s)</span>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-            Precedent
+            Précédent
           </Button>
           <span>
             {page}/{totalPages}
@@ -210,10 +210,10 @@ export default function AdminUsersPage() {
                     {detail.quota.words_used.toLocaleString("fr-FR")} / {detail.quota.words_limit.toLocaleString("fr-FR")} mots
                   </span>
                   <span>
-                    {detail.quota.downloads_used} / {detail.quota.downloads_limit} telechargements
+                    {detail.quota.downloads_used} / {detail.quota.downloads_limit} téléchargements
                   </span>
                   <Button variant="outline" size="sm" onClick={resetQuota} className="mt-1 w-fit">
-                    Reinitialiser le quota
+                    Réinitialiser le quota
                   </Button>
                 </div>
               )}
@@ -232,7 +232,7 @@ export default function AdminUsersPage() {
                     </div>
                   ))}
                   {detail.recent_usage.length === 0 && (
-                    <span className="text-xs text-muted-foreground">Aucune generation.</span>
+                    <span className="text-xs text-muted-foreground">Aucune génération.</span>
                   )}
                 </div>
               </div>

@@ -30,8 +30,8 @@ type DocumentRow = {
   id: string;
   tool: string;
   title: string;
-  template: string;
-  format: "docx" | "pdf";
+  template: string | null;
+  format: "docx" | "pdf" | null;
   created_at: string;
 };
 
@@ -39,7 +39,7 @@ const TOOL_LABELS: Record<string, string> = {
   cv: "CV",
   cover_letter: "Lettre de motivation",
   pro_doc: "Document professionnel",
-  academic: "Document academique",
+  academic: "Document académique",
 };
 
 const TEMPLATES_BY_TOOL: Record<string, { value: string; label: string }[]> = {
@@ -57,7 +57,7 @@ const TEMPLATES_BY_TOOL: Record<string, { value: string; label: string }[]> = {
   ],
   academic: [
     { value: "academic_formal", label: "Formel" },
-    { value: "academic_clean", label: "Epure" },
+    { value: "academic_clean", label: "Épurée" },
   ],
 };
 
@@ -74,7 +74,7 @@ export default function DocumentsPage() {
   async function handleDownload(id: string) {
     const res = await apiFetch(`/api/v1/documents/${id}/download`);
     if (!res.ok) {
-      toast.error("Telechargement impossible");
+      toast.error("Téléchargement impossible");
       return;
     }
     const data = await res.json();
@@ -82,13 +82,13 @@ export default function DocumentsPage() {
   }
 
   async function handleRerender(doc: DocumentRow, template: string) {
-    const res = await apiFetch(`/api/v1/documents/${doc.id}/rerender`, {
+    const res = await apiFetch(`/api/v1/documents/${doc.id}/render`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ template, format: doc.format }),
+      body: JSON.stringify({ template, format: doc.format ?? "pdf" }),
     });
     if (!res.ok) {
-      toast.error("Regeneration impossible", {
+      toast.error("Régénération impossible", {
         description: (await res.json().catch(() => null))?.detail,
       });
       return;
@@ -97,7 +97,7 @@ export default function DocumentsPage() {
     window.open(data.url, "_blank");
     const refreshed = await apiFetch("/api/v1/documents");
     if (refreshed.ok) setDocuments(await refreshed.json());
-    toast.success("Document regenere");
+    toast.success("Document régénéré");
   }
 
   async function handleDelete(id: string) {
@@ -107,7 +107,7 @@ export default function DocumentsPage() {
       return;
     }
     setDocuments((prev) => prev?.filter((d) => d.id !== id) ?? null);
-    toast.success("Document supprime");
+    toast.success("Document supprimé");
   }
 
   const filtered = documents?.filter((d) => toolFilter === "all" || d.tool === toolFilter) ?? [];
@@ -117,7 +117,7 @@ export default function DocumentsPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1>Documents</h1>
-          <p className="text-muted-foreground">Historique de vos documents generes.</p>
+          <p className="text-muted-foreground">Historique de vos documents générés.</p>
         </div>
         <Select value={toolFilter} onValueChange={(v) => v && setToolFilter(v)}>
           <SelectTrigger className="w-48">
@@ -157,18 +157,24 @@ export default function DocumentsPage() {
               <p className="truncate font-medium">{doc.title}</p>
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <Badge variant="outline">{TOOL_LABELS[doc.tool] ?? doc.tool}</Badge>
-                <span>{doc.template}</span>
-                <span className="uppercase">{doc.format}</span>
+                {doc.template ? (
+                  <>
+                    <span>{doc.template}</span>
+                    <span className="uppercase">{doc.format}</span>
+                  </>
+                ) : (
+                  <span className="italic">Pas encore rendu — choisissez un modèle</span>
+                )}
                 <span>{new Date(doc.created_at).toLocaleDateString("fr-FR")}</span>
               </div>
             </div>
             <Button size="sm" variant="outline" onClick={() => handleDownload(doc.id)}>
-              <Download className="size-3.5" /> Telecharger
+              <Download className="size-3.5" /> Télécharger
             </Button>
             <Select onValueChange={(v) => typeof v === "string" && handleRerender(doc, v)}>
               <SelectTrigger className="w-auto" size="sm">
                 <RotateCcw className="size-3.5" />
-                <SelectValue placeholder="Regenerer" />
+                <SelectValue placeholder="Régénérer" />
               </SelectTrigger>
               <SelectContent>
                 {(TEMPLATES_BY_TOOL[doc.tool] ?? []).map((t) => (
@@ -185,7 +191,7 @@ export default function DocumentsPage() {
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle>Supprimer ce document ?</AlertDialogTitle>
-                  <AlertDialogDescription>Cette action est irreversible.</AlertDialogDescription>
+                  <AlertDialogDescription>Cette action est irréversible.</AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Annuler</AlertDialogCancel>
