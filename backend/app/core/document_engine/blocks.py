@@ -256,13 +256,21 @@ DOCUMENT_SCHEMAS: dict[str, dict] = {
         ],
         "guidance": (
             "cover_page TOUJOURS en premier bloc, quel que soit le type ou la longueur "
-            "du document — jamais omise. Renseigne systematiquement title, author, "
-            "date et institution des que l'info existe quelque part dans le contexte "
-            "ou la conversation ; ne laisse jamais un champ vide si l'info est "
-            "disponible. Puis structure avec des heading de niveau 1-3. Utilise table "
-            "pour les donnees chiffrees (budgets, indicateurs, comparatifs) et "
-            "bullet_list pour les enumerations, sans en abuser : un document sans "
-            "aucune donnee tabulaire n'a pas besoin de table."
+            "du document — jamais omise. title doit TOUJOURS etre specifique au sujet "
+            "reel decrit par le user (ex: 'Rapport d'Activite 2025 — Transport Express "
+            "SARL', 'Proposition Commerciale — Refonte du Systeme de Facturation') : "
+            "n'utilise JAMAIS un intitule generique comme 'Document Professionnel', "
+            "'Rapport' seul, ou le nom du type de document tel quel — synthetise "
+            "toujours un titre a partir du contexte, meme partiel. Ce n'est pas "
+            "inventer un fait precis (voir regle generale sur les infos manquantes) : "
+            "un titre est une synthese attendue, jamais une donnee factuelle a "
+            "deviner. Renseigne aussi author, date et institution des que l'info "
+            "existe quelque part dans le contexte ou la conversation ; ne laisse "
+            "jamais un champ vide si l'info est disponible. Puis structure avec des "
+            "heading de niveau 1-3. Utilise table pour les donnees chiffrees "
+            "(budgets, indicateurs, comparatifs) et bullet_list pour les "
+            "enumerations, sans en abuser : un document sans aucune donnee tabulaire "
+            "n'a pas besoin de table."
         ),
     },
     "academic": {
@@ -280,10 +288,18 @@ DOCUMENT_SCHEMAS: dict[str, dict] = {
             "bibliography",
         ],
         "guidance": (
-            "cover_page TOUJOURS en premier bloc — renseigne systematiquement title, "
-            "author, date et institution des que l'info existe quelque part dans le "
-            "contexte ou la conversation ; ne laisse jamais un champ vide si l'info "
-            "est disponible. Puis table_of_contents, puis les chapitres/sections avec "
+            "cover_page TOUJOURS en premier bloc. title doit TOUJOURS etre specifique "
+            "au sujet reel decrit par le user (ex: 'Rapport de Stage — Optimisation "
+            "de la Chaine Logistique chez X', 'Memoire — Impact du Mobile Money sur "
+            "l'Inclusion Financiere en Afrique de l'Ouest') : n'utilise JAMAIS un "
+            "intitule generique comme 'Document Academique' ou le nom du type de "
+            "document tel quel — synthetise toujours un titre a partir du contexte, "
+            "meme partiel. Ce n'est pas inventer un fait precis (voir regle generale "
+            "sur les infos manquantes) : un titre est une synthese attendue, jamais "
+            "une donnee factuelle a deviner. Renseigne aussi systematiquement author, "
+            "date et institution des que l'info existe quelque part dans le contexte "
+            "ou la conversation ; ne laisse jamais un champ vide si l'info est "
+            "disponible. Puis table_of_contents, puis les chapitres/sections avec "
             "heading (niveau 1 pour les parties, 2-3 pour les sous-parties). Style "
             "academique, impersonnel. table pour les donnees d'enquete ou de "
             "comparaison, bullet_list pour les enumerations. bibliography en dernier "

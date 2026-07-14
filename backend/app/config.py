@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     ACADEMIC_SEGMENT_THRESHOLD: int = 6
     ACADEMIC_SEGMENT_SIZE: int = 2
 
+    # LibreOffice headless (conversion docx/office <-> pdf). "soffice" suffit quand le
+    # binaire est sur le PATH (cas du conteneur Docker, qui l'installe via apt) ; sinon
+    # chemin complet vers soffice.exe (ex: installation Windows locale non ajoutee au PATH).
+    SOFFICE_BIN: str = "soffice"
+
     @property
     def allowed_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip()]

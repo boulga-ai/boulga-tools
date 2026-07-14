@@ -284,6 +284,7 @@ def _render_letter_header(doc: DocxDocument, block, style: TemplateStyle) -> Non
         remove_table_borders(header_table)
         cell = header_table.rows[0].cells[0]
         set_cell_background(cell, "0B1F3A")
+        set_cell_margins(cell, top_cm=0.4, left_cm=0.8, bottom_cm=0.4, right_cm=0.8)
         cell.paragraphs[0].text = ""
         name_run = cell.paragraphs[0].add_run(block.sender_name)
         name_run.font.size = Pt(18)

@@ -1,10 +1,11 @@
-import os
 import subprocess
 import uuid
 from pathlib import Path
 
 from PIL import Image
 from pypdf import PdfReader, PdfWriter
+
+from app.config import settings
 
 MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 Mo
 
@@ -35,9 +36,6 @@ ALLOWED_MIME_BY_EXT: dict[str, set[str]] = {
     "gif": {"image/gif"},
 }
 
-SOFFICE_BIN = os.environ.get("SOFFICE_BIN", "soffice")
-
-
 class ConversionError(Exception):
     pass
 
@@ -62,7 +60,7 @@ def _convert_via_libreoffice(input_path: Path, target_format: str, output_dir: P
     try:
         result = subprocess.run(
             [
-                SOFFICE_BIN,
+                settings.SOFFICE_BIN,
                 "--headless",
                 "--convert-to",
                 target_format,

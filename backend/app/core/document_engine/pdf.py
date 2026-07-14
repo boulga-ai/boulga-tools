@@ -1,7 +1,7 @@
 import subprocess
 from pathlib import Path
 
-from app.core.file_converter.converter import SOFFICE_BIN
+from app.config import settings
 
 
 class PdfConversionError(Exception):
@@ -11,7 +11,7 @@ class PdfConversionError(Exception):
 def docx_to_pdf(docx_path: Path, output_dir: Path, timeout: int = 30) -> Path:
     try:
         result = subprocess.run(
-            [SOFFICE_BIN, "--headless", "--convert-to", "pdf", "--outdir", str(output_dir), str(docx_path)],
+            [settings.SOFFICE_BIN, "--headless", "--convert-to", "pdf", "--outdir", str(output_dir), str(docx_path)],
             capture_output=True,
             timeout=timeout,
         )
