@@ -5,6 +5,7 @@ import { Plus, Send, Trash2, Menu, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/tools/CopyButton";
 import { GenerationError } from "@/components/tools/GenerationError";
+import { MarkdownContent } from "@/components/tools/MarkdownContent";
 import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
@@ -191,9 +192,7 @@ export default function ChatPage() {
         <div ref={scrollRef} className="flex flex-1 flex-col gap-4 overflow-y-auto p-4 md:p-6">
           {messages.length === 0 && !isStreaming && (
             <div className="m-auto max-w-md text-center text-muted-foreground">
-              <p className="text-foreground">
-                Bonjour ! Je suis Boulga, votre assistant IA.
-              </p>
+              <p className="text-foreground">Bonjour ! Je suis Boulga.</p>
               <p className="text-sm">Posez-moi une question pour commencer.</p>
             </div>
           )}
@@ -208,11 +207,13 @@ export default function ChatPage() {
             >
               <div
                 className={cn(
-                  "max-w-[80%] whitespace-pre-wrap rounded-[12px] px-4 py-2.5 text-sm",
-                  m.role === "user" ? "bg-blue-50 text-foreground" : "bg-card border",
+                  "max-w-[80%] rounded-[12px] px-4 py-2.5 text-sm",
+                  m.role === "user"
+                    ? "whitespace-pre-wrap bg-blue-50 text-foreground"
+                    : "bg-card border",
                 )}
               >
-                {m.content}
+                {m.role === "assistant" ? <MarkdownContent text={m.content} /> : m.content}
               </div>
               {m.role === "assistant" && (
                 <CopyButton
@@ -228,8 +229,8 @@ export default function ChatPage() {
 
           {isStreaming && (
             <div className="flex justify-start">
-              <div className="max-w-[80%] whitespace-pre-wrap rounded-[12px] border bg-card px-4 py-2.5 text-sm">
-                {text}
+              <div className="max-w-[80%] rounded-[12px] border bg-card px-4 py-2.5 text-sm">
+                <MarkdownContent text={text} />
                 <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-bleu-boulga align-text-bottom" />
               </div>
             </div>

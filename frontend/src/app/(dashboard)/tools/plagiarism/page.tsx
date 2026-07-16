@@ -7,6 +7,7 @@ import { ToolLayout } from "@/components/tools/ToolLayout";
 import { DropZone } from "@/components/tools/DropZone";
 import { CopyButton } from "@/components/tools/CopyButton";
 import { GenerationError } from "@/components/tools/GenerationError";
+import { MarkdownContent } from "@/components/tools/MarkdownContent";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import {
@@ -226,8 +227,8 @@ export default function PlagiarismPage() {
               )}
 
               {(correction || isStreaming) && (
-                <div className="rounded-[12px] border bg-card p-4 text-sm whitespace-pre-wrap">
-                  {correction}
+                <div className="rounded-[12px] border bg-card p-4 text-sm">
+                  <MarkdownContent text={correction} />
                   {isStreaming && (
                     <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-bleu-boulga align-text-bottom" />
                   )}

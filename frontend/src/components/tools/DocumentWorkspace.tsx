@@ -4,6 +4,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "re
 import { toast } from "sonner";
 import { Sparkles, Eye, Square, Wand2, Download, Plus, X, Loader2, Pencil, Send } from "lucide-react";
 import { AIInteraction } from "@/components/tools/AIInteraction";
+import { MarkdownContent } from "@/components/tools/MarkdownContent";
 import { DocumentRenderer } from "@/components/tools/DocumentRenderer";
 import { GenerationError } from "@/components/tools/GenerationError";
 import { TemplateSelector, type TemplateOption } from "@/components/tools/TemplateSelector";
@@ -552,8 +553,8 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
             ) : (
               <div key={turn.id} className="flex flex-col gap-2">
                 {turn.message && (
-                  <div className="max-w-[90%] whitespace-pre-wrap rounded-[12px] rounded-tl-sm bg-muted px-3 py-2 text-sm">
-                    {turn.message}
+                  <div className="max-w-[90%] rounded-[12px] rounded-tl-sm bg-muted px-3 py-2 text-sm">
+                    <MarkdownContent text={turn.message} />
                   </div>
                 )}
                 {turnBlocks(turn).length > 0 && (
