@@ -111,10 +111,38 @@ async def reformulator(
         {"role": "user", "content": body.text},
     ]
 
+    def persist(full_text: str) -> None:
+        save_conversation(
+            user["user_id"],
+            "reformulator",
+            title=body.text[:50],
+            messages=[
+                {"role": "user", "content": body.text},
+                {"role": "assistant", "content": full_text},
+            ],
+        )
+
     return EventSourceResponse(
-        _run_stream_tool(tool="reformulator", user=user, model=model, messages=messages),
+        _run_stream_tool(
+            tool="reformulator", user=user, model=model, messages=messages, on_complete=persist
+        ),
         sep="\n",
     )
+
+
+@router.get("/reformulator/history")
+async def reformulator_history(user: dict = Depends(get_current_user)) -> list[dict]:
+    return list_conversations(user["user_id"], "reformulator")
+
+
+@router.get("/reformulator/history/{conversation_id}")
+async def reformulator_history_detail(
+    conversation_id: str, user: dict = Depends(get_current_user)
+) -> dict:
+    conversation = get_conversation(user["user_id"], "reformulator", conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Introuvable.")
+    return conversation
 
 
 @router.post("/email-writer")

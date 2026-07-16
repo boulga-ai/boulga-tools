@@ -14,17 +14,22 @@ SYSTEM_PROMPT = (
     "quand le sujet ne l'exige pas.\n"
     "- Grammaire et orthographe trop parfaites, sans les petites imperfections "
     "naturelles d'un texte humain rédigé sans relecture poussée.\n\n"
-    "Un texte peut être partiellement généré : évalue le texte dans son ensemble, pas "
-    "seulement ses passages les plus suspects.\n\n"
+    "Un texte peut être partiellement généré : distingue bien un texte généré de bout "
+    "en bout (ai_score haut, mixed_score bas) d'un texte manifestement humain mais "
+    "édité/poli par une IA par endroits, ou mêlant des passages clairement humains et "
+    "clairement générés (mixed_score haut).\n\n"
     "Réponds UNIQUEMENT avec un objet JSON strict, sans fence markdown, de la forme :\n"
-    '{"ai_score": <0-100, probabilité que le texte soit généré par IA>, '
+    '{"ai_score": <0-100, probabilité que le texte soit entièrement/majoritairement '
+    'généré par IA>, "mixed_score": <0-100, probabilité que ce soit un mélange '
+    'homme+IA ou un texte humain retouché par IA>, "human_score": <0-100, probabilité '
+    "que ce soit entièrement humain>, les trois devant sommer à 100, "
     '"assessment": [{"quote": "<citation verbatim du texte, 8 à 25 mots>", '
     '"reason": "<pourquoi ce passage semble généré>"}], '
     '"summary": "<une phrase résumant le verdict global>"}\n\n'
     "Chaque \"quote\" DOIT être une citation exacte, mot pour mot, d'un passage du "
     "texte fourni — jamais une paraphrase. Limite \"assessment\" aux 3 à 5 passages les "
-    "plus révélateurs. Si le texte semble entièrement humain, renvoie un ai_score bas "
-    "et une liste \"assessment\" vide."
+    "plus révélateurs. Si le texte semble entièrement humain, renvoie un ai_score et un "
+    "mixed_score bas, et une liste \"assessment\" vide."
 )
 
 

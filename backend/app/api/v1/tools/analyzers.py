@@ -1,7 +1,11 @@
+import json
+import uuid
+
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
 from sse_starlette.sse import EventSourceResponse
 
 from app.api.v1.tools.transformers import _run_stream_tool
+from app.core.conversations import get_conversation, list_conversations, save_conversation
 from app.core.llm.client import OpenRouterError, compute_cost
 from app.core.llm.detection import detect_ai_content, detect_plagiarism
 from app.core.llm.prompts import plagiarism as plagiarism_prompts
@@ -10,30 +14,108 @@ from app.core.llm.router import ModelNotAvailableError, resolve_model
 from app.core.quota import consume_scan
 from app.core.rate_limit import rate_limit_dep
 from app.core.usage import log_usage
-from app.dependencies import check_quota_dep
+from app.dependencies import check_quota_dep, get_current_user
 from app.models.analyzers import AiRewriteRequest, PlagiarismCorrectRequest
+from app.utils.storage import create_signed_url, upload_file
 from app.utils.text_extraction import ExtractionError, extract_text
 
 router = APIRouter(
     prefix="/tools/analyzers", tags=["analyzers"], dependencies=[Depends(rate_limit_dep)]
 )
 
+UPLOADS_BUCKET = "uploads"
+# Duree de vie de l'URL signee generee a la (re)consultation d'un historique - courte
+# car regeneree a chaque ouverture, pas besoin de duree longue (cf. meme convention que
+# DOWNLOAD_URL_TTL dans api/v1/documents.py).
+HISTORY_FILE_URL_TTL = 15 * 60
 
-async def _resolve_input_text(text: str | None, file: UploadFile | None) -> str:
+
+def _persist_scan(
+    user_id: str,
+    tool: str,
+    input_text: str,
+    result: dict,
+    file_path: str | None = None,
+    file_name: str | None = None,
+) -> None:
+    """Journalise un scan dans l'historique (reutilise la table conversations : le
+    resultat structure — scores, passages signales — est stocke tel quel en JSON dans
+    le message assistant, pas de nouvelle table pour ce format specifique). Si un
+    fichier a ete uploade, son chemin de stockage prive est inclus (jamais l'URL
+    signee, qui expire) - voir _attach_file_url pour la resolution a la lecture."""
+    try:
+        payload = dict(result)
+        if file_path:
+            payload["file_path"] = file_path
+            payload["file_name"] = file_name
+        save_conversation(
+            user_id,
+            tool,
+            title=input_text[:50],
+            messages=[
+                {"role": "user", "content": input_text},
+                {"role": "assistant", "content": json.dumps(payload)},
+            ],
+        )
+    except Exception:
+        pass  # le scan a deja ete livre a l'utilisateur ; ne pas casser la reponse
+
+
+def _attach_file_url(conversation: dict) -> dict:
+    """Remplace file_path (chemin de stockage prive, jamais expose tel quel) par
+    file_url (URL signee, prete a etre fetchee par le frontend) dans le message
+    assistant d'un historique de scan, si un fichier a ete conserve."""
+    for message in conversation.get("messages_json") or []:
+        if message.get("role") != "assistant":
+            continue
+        try:
+            payload = json.loads(message["content"])
+        except (json.JSONDecodeError, KeyError, TypeError):
+            continue
+        file_path = payload.pop("file_path", None)
+        if file_path:
+            try:
+                payload["file_url"] = create_signed_url(
+                    UPLOADS_BUCKET, file_path, HISTORY_FILE_URL_TTL
+                )
+            except Exception:
+                pass  # pas de fichier disponible ; l'historique texte reste consultable
+        message["content"] = json.dumps(payload)
+    return conversation
+
+
+async def _resolve_input_text(
+    text: str | None, file: UploadFile | None
+) -> tuple[str, bytes | None, str | None, str | None]:
+    """Renvoie (texte_extrait, octets_bruts, nom_fichier, content_type). Les 3 derniers
+    sont None si l'entree est du texte colle (pas de fichier a persister)."""
     if file is not None:
         content = await file.read()
         try:
-            return extract_text(file.filename or "fichier.txt", content)
+            extracted = extract_text(file.filename or "fichier.txt", content)
         except ExtractionError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+        return extracted, content, file.filename, file.content_type
 
     if text and text.strip():
-        return text.strip()
+        return text.strip(), None, None, None
 
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail="Fournissez un texte ou un fichier (PDF, DOCX, TXT).",
     )
+
+
+def _store_uploaded_file(user_id: str, content: bytes, filename: str, content_type: str | None) -> str | None:
+    """Upload best-effort vers le bucket 'uploads' - un echec ne doit jamais casser le
+    scan, qui a deja son resultat pret a etre renvoye."""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "bin"
+    path = f"{user_id}/{uuid.uuid4()}.{ext}"
+    try:
+        upload_file(UPLOADS_BUCKET, path, content, content_type or "application/octet-stream")
+        return path
+    except Exception:
+        return None
 
 
 @router.post("/ai-detector/scan")
@@ -42,7 +124,7 @@ async def ai_detector_scan(
     file: UploadFile | None = None,
     user: dict = Depends(check_quota_dep("scans")),
 ) -> dict:
-    input_text = await _resolve_input_text(text, file)
+    input_text, file_bytes, file_name, content_type = await _resolve_input_text(text, file)
 
     try:
         model = resolve_model("ai_detector_scan", user["tier"])
@@ -66,7 +148,27 @@ async def ai_detector_scan(
     )
     consume_scan(user["user_id"])
 
+    file_path = None
+    if file_bytes is not None and file_name is not None:
+        file_path = _store_uploaded_file(user["user_id"], file_bytes, file_name, content_type)
+    _persist_scan(user["user_id"], "ai_detector_scan", input_text, result, file_path, file_name)
+
     return {"text": input_text, **result}
+
+
+@router.get("/ai-detector/history")
+async def ai_detector_history(user: dict = Depends(get_current_user)) -> list[dict]:
+    return list_conversations(user["user_id"], "ai_detector_scan")
+
+
+@router.get("/ai-detector/history/{conversation_id}")
+async def ai_detector_history_detail(
+    conversation_id: str, user: dict = Depends(get_current_user)
+) -> dict:
+    conversation = get_conversation(user["user_id"], "ai_detector_scan", conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Introuvable.")
+    return _attach_file_url(conversation)
 
 
 @router.post("/ai-detector/rewrite")
@@ -98,7 +200,7 @@ async def plagiarism_scan(
     file: UploadFile | None = None,
     user: dict = Depends(check_quota_dep("scans")),
 ) -> dict:
-    input_text = await _resolve_input_text(text, file)
+    input_text, file_bytes, file_name, content_type = await _resolve_input_text(text, file)
 
     try:
         model = resolve_model("plagiarism_scan", user["tier"])
@@ -122,7 +224,27 @@ async def plagiarism_scan(
     )
     consume_scan(user["user_id"])
 
+    file_path = None
+    if file_bytes is not None and file_name is not None:
+        file_path = _store_uploaded_file(user["user_id"], file_bytes, file_name, content_type)
+    _persist_scan(user["user_id"], "plagiarism_scan", input_text, result, file_path, file_name)
+
     return {"text": input_text, **result}
+
+
+@router.get("/plagiarism/history")
+async def plagiarism_history(user: dict = Depends(get_current_user)) -> list[dict]:
+    return list_conversations(user["user_id"], "plagiarism_scan")
+
+
+@router.get("/plagiarism/history/{conversation_id}")
+async def plagiarism_history_detail(
+    conversation_id: str, user: dict = Depends(get_current_user)
+) -> dict:
+    conversation = get_conversation(user["user_id"], "plagiarism_scan", conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Introuvable.")
+    return _attach_file_url(conversation)
 
 
 @router.post("/plagiarism/correct")
