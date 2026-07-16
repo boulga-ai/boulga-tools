@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Shield, Loader2, ExternalLink, Square } from "lucide-react";
 import { ToolLayout } from "@/components/tools/ToolLayout";
@@ -38,29 +38,22 @@ type FlaggedSpan = {
   source_url: string;
 };
 
-type PollResult =
-  | { status: "processing" }
-  | { status: "completed"; similarity_score: number; flagged_spans: FlaggedSpan[] };
+type ScanResult = {
+  text: string;
+  similarity_score: number;
+  flagged_spans: FlaggedSpan[];
+};
 
 export default function PlagiarismPage() {
   const { profile } = useAuth();
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [scannedText, setScannedText] = useState("");
-  const [polling, setPolling] = useState(false);
-  const [result, setResult] = useState<PollResult | null>(null);
+  const [result, setResult] = useState<ScanResult | null>(null);
   const [tone, setTone] = useState<string | undefined>(undefined);
   const { text: correction, isStreaming, error, isQuotaError, start, stop } = useStreaming();
-  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const canCorrect = profile ? profile.current_tier !== "introduction" : false;
-
-  useEffect(() => {
-    return () => {
-      if (pollTimer.current) clearInterval(pollTimer.current);
-    };
-  }, []);
 
   async function handleScan() {
     if (!text.trim() && !file) return;
@@ -77,23 +70,9 @@ export default function PlagiarismPage() {
       });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
-        throw new Error(body?.detail ?? "Échec de la soumission.");
+        throw new Error(body?.detail ?? "Échec de la vérification.");
       }
-      const data = await res.json();
-      setScannedText(data.text);
-      setPolling(true);
-      setResult({ status: "processing" });
-
-      pollTimer.current = setInterval(async () => {
-        const pollRes = await apiFetch(`/api/v1/tools/analyzers/plagiarism/result/${data.scan_id}`);
-        if (!pollRes.ok) return;
-        const pollData: PollResult = await pollRes.json();
-        if (pollData.status === "completed") {
-          if (pollTimer.current) clearInterval(pollTimer.current);
-          setPolling(false);
-          setResult(pollData);
-        }
-      }, 3000);
+      setResult(await res.json());
     } catch (err) {
       toast.error("Vérification impossible", { description: (err as Error).message });
     } finally {
@@ -102,9 +81,9 @@ export default function PlagiarismPage() {
   }
 
   async function handleCorrect() {
-    if (!result || result.status !== "completed" || !canCorrect) return;
+    if (!result || !canCorrect) return;
     await start("/api/v1/tools/analyzers/plagiarism/correct", {
-      text: scannedText,
+      text: result.text,
       flagged_passages: result.flagged_spans.map((s) => s.text),
       tone,
     });
@@ -143,20 +122,13 @@ export default function PlagiarismPage() {
         />
         {file && <p className="text-sm text-muted-foreground">Fichier sélectionné : {file.name}</p>}
 
-        <Button onClick={handleScan} disabled={submitting || polling || (!text.trim() && !file)} className="w-fit">
+        <Button onClick={handleScan} disabled={submitting || (!text.trim() && !file)} className="w-fit">
           {submitting ? <Loader2 className="size-4 animate-spin" /> : <Shield className="size-4" />}
-          {submitting ? "Envoi en cours..." : "Vérifier le plagiat"}
+          {submitting ? "Analyse en cours..." : "Vérifier le plagiat"}
         </Button>
       </div>
 
-      {result?.status === "processing" && (
-        <div className="flex items-center gap-2 rounded-[12px] border bg-card p-4 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" />
-          Analyse en cours... (30 secondes environ)
-        </div>
-      )}
-
-      {result?.status === "completed" && (
+      {result && (
         <div className="flex flex-col gap-4 border-t pt-6">
           <div>
             <p className="text-2xl font-semibold text-erreur">{result.similarity_score}%</p>

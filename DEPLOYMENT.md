@@ -17,8 +17,7 @@
    LibreOffice headless).
 2. Variables d'environnement (voir `backend/.env.example`) :
    - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET`
-   - `OPENROUTER_API_KEY`
-   - `COPYLEAKS_EMAIL`, `COPYLEAKS_API_KEY` (laisser vide = mode mock)
+   - `OPENROUTER_API_KEY` (aussi utilise pour la detection IA/plagiat interimaire, voir app/core/llm/detection.py)
    - `ENV=production`, `PORT=8003`
    - `ALLOWED_ORIGINS=https://<domaine-vercel>,http://localhost:3000,http://localhost:3001,http://localhost:3002`
    - `ADMIN_EMAIL=boulgacorporation@gmail.com`

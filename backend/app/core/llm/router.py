@@ -22,7 +22,7 @@ DEFAULT_ROUTING: dict[str, dict[str, list[str] | None]] = {
     "reformulator": {
         "introduction": ["x-ai/grok-4.3", "deepseek/deepseek-v4-flash"],
         "goutte_source": ["openai/gpt-5.1-mini"],
-        "fleuve_ocean": ["openai/gpt-5.1"],
+        "fleuve_ocean": ["anthropic/claude-sonnet-4.6"],
     },
     "email_writer": {
         "introduction": ["x-ai/grok-4.3", "deepseek/deepseek-v4-flash"],
@@ -52,6 +52,20 @@ DEFAULT_ROUTING: dict[str, dict[str, list[str] | None]] = {
     "plagiarism_correction": {
         "introduction": None,
         "goutte_source": ["x-ai/grok-4.3"],
+        "fleuve_ocean": ["anthropic/claude-sonnet-4.6"],
+    },
+    # Detection (scan) IA + plagiat — solution LLM interimaire en attendant l'integration
+    # Originality.ai (voir app/core/llm/detection.py). Disponible a tous les paliers y
+    # compris introduction : c'est le quota "scans" (pas le routing) qui limite l'usage
+    # gratuit, voir app/core/quota.py.
+    "ai_detector_scan": {
+        "introduction": ["google/gemini-2.5-flash-lite"],
+        "goutte_source": ["openai/gpt-5.1-mini"],
+        "fleuve_ocean": ["anthropic/claude-sonnet-4.6"],
+    },
+    "plagiarism_scan": {
+        "introduction": ["google/gemini-2.5-flash-lite"],
+        "goutte_source": ["openai/gpt-5.1-mini"],
         "fleuve_ocean": ["anthropic/claude-sonnet-4.6"],
     },
     # Documents avances — jamais disponibles en Introduction.

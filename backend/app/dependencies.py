@@ -74,7 +74,7 @@ async def get_current_user_with_tier(user: dict = Depends(get_current_user)) -> 
     return {**user, "tier": profile["current_tier"]}
 
 
-def check_quota_dep(kind: Literal["words", "downloads"]):
+def check_quota_dep(kind: Literal["words", "downloads", "scans"]):
     """Dependance FastAPI : verifie le solde de quota du palier courant avant d'entrer
     dans un endpoint d'outil. Renvoie l'utilisateur enrichi de son palier."""
 

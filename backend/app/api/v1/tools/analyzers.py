@@ -2,17 +2,15 @@ from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
 from sse_starlette.sse import EventSourceResponse
 
 from app.api.v1.tools.transformers import _run_stream_tool
-from app.core.copyleaks.client import (
-    CopyleaksError,
-    get_plagiarism_result,
-    scan_ai_content,
-    submit_plagiarism_scan,
-)
+from app.core.llm.client import OpenRouterError, compute_cost
+from app.core.llm.detection import detect_ai_content, detect_plagiarism
 from app.core.llm.prompts import plagiarism as plagiarism_prompts
 from app.core.llm.prompts.ai_rewrite import build_system_prompt
 from app.core.llm.router import ModelNotAvailableError, resolve_model
+from app.core.quota import consume_scan
 from app.core.rate_limit import rate_limit_dep
-from app.dependencies import check_quota_dep, get_current_user
+from app.core.usage import log_usage
+from app.dependencies import check_quota_dep
 from app.models.analyzers import AiRewriteRequest, PlagiarismCorrectRequest
 from app.utils.text_extraction import ExtractionError, extract_text
 
@@ -42,14 +40,31 @@ async def _resolve_input_text(text: str | None, file: UploadFile | None) -> str:
 async def ai_detector_scan(
     text: str | None = Form(None),
     file: UploadFile | None = None,
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(check_quota_dep("scans")),
 ) -> dict:
     input_text = await _resolve_input_text(text, file)
 
     try:
-        result = await scan_ai_content(input_text)
-    except CopyleaksError as exc:
+        model = resolve_model("ai_detector_scan", user["tier"])
+    except ModelNotAvailableError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+
+    try:
+        result, usage = await detect_ai_content(input_text, model)
+    except OpenRouterError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
+
+    cost = compute_cost(model, usage["tokens_in"], usage["tokens_out"])
+    log_usage(
+        user["user_id"],
+        "ai_detector_scan",
+        model,
+        usage["tokens_in"],
+        usage["tokens_out"],
+        cost,
+        user["tier"],
+    )
+    consume_scan(user["user_id"])
 
     return {"text": input_text, **result}
 
@@ -81,24 +96,33 @@ async def ai_detector_rewrite(
 async def plagiarism_scan(
     text: str | None = Form(None),
     file: UploadFile | None = None,
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(check_quota_dep("scans")),
 ) -> dict:
     input_text = await _resolve_input_text(text, file)
 
     try:
-        scan_id = await submit_plagiarism_scan(input_text)
-    except CopyleaksError as exc:
+        model = resolve_model("plagiarism_scan", user["tier"])
+    except ModelNotAvailableError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+
+    try:
+        result, usage = await detect_plagiarism(input_text, model)
+    except OpenRouterError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
-    return {"scan_id": scan_id, "text": input_text}
+    cost = compute_cost(model, usage["tokens_in"], usage["tokens_out"])
+    log_usage(
+        user["user_id"],
+        "plagiarism_scan",
+        model,
+        usage["tokens_in"],
+        usage["tokens_out"],
+        cost,
+        user["tier"],
+    )
+    consume_scan(user["user_id"])
 
-
-@router.get("/plagiarism/result/{scan_id}")
-async def plagiarism_result(scan_id: str, user: dict = Depends(get_current_user)) -> dict:
-    try:
-        return await get_plagiarism_result(scan_id)
-    except CopyleaksError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    return {"text": input_text, **result}
 
 
 @router.post("/plagiarism/correct")

@@ -26,6 +26,9 @@ export function QuotaBar() {
           <span className="text-muted-foreground">
             {quota.downloads_remaining.toLocaleString("fr-FR")} téléchargements restants
           </span>
+          <span className="text-muted-foreground">
+            {quota.scans_remaining.toLocaleString("fr-FR")} scans restants
+          </span>
         </>
       )}
     </Link>

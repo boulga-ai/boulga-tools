@@ -9,6 +9,8 @@ export type QuotaState = {
   words_limit: number;
   downloads_remaining: number;
   downloads_limit: number;
+  scans_remaining: number;
+  scans_limit: number;
 };
 
 export function useQuota() {

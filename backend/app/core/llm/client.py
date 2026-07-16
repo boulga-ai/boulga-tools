@@ -59,9 +59,12 @@ async def stream_completion(
     *,
     temperature: float = 0.7,
     max_tokens: int | None = None,
+    plugins: list[dict] | None = None,
 ) -> AsyncIterator[StreamChunk]:
     """Appelle OpenRouter en streaming et yield des deltas de texte, puis un chunk usage
-    (tokens_in/tokens_out) une fois le flux termine."""
+    (tokens_in/tokens_out) une fois le flux termine. plugins active des extensions
+    OpenRouter (ex. recherche web {"id": "web", "max_results": N}) - facturees en sus,
+    voir https://openrouter.ai/docs/guides/features/plugins/web-search."""
     payload: dict = {
         "model": model,
         "messages": messages,
@@ -71,6 +74,8 @@ async def stream_completion(
     }
     if max_tokens is not None:
         payload["max_tokens"] = max_tokens
+    if plugins is not None:
+        payload["plugins"] = plugins
 
     headers = {
         "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
@@ -117,14 +122,16 @@ async def stream_completion(
         raise OpenRouterError(f"OpenRouter injoignable : {exc}") from exc
 
 
-async def complete_json(model: str, messages: list[dict]) -> tuple[dict, dict]:
+async def complete_json(
+    model: str, messages: list[dict], *, plugins: list[dict] | None = None
+) -> tuple[dict, dict]:
     """Consomme un stream_completion en entier et parse le JSON produit. Tente une
     reparation simple (retrait des fences markdown, extraction du bloc {...} externe)
     avant d'abandonner. Renvoie (data, usage) ; usage = {tokens_in, tokens_out}."""
     full_text = ""
     usage = {"tokens_in": 0, "tokens_out": 0}
 
-    async for chunk in stream_completion(model, messages, temperature=0.4):
+    async for chunk in stream_completion(model, messages, temperature=0.4, plugins=plugins):
         if chunk["type"] == "delta":
             full_text += chunk["text"]
         elif chunk["type"] == "usage":

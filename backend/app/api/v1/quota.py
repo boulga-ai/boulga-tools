@@ -16,4 +16,6 @@ async def read_quota(user: dict = Depends(get_current_user)) -> dict:
         "words_limit": quota["words_limit"],
         "downloads_remaining": max(quota["downloads_limit"] - quota["downloads_used"], 0),
         "downloads_limit": quota["downloads_limit"],
+        "scans_remaining": max(quota["scans_limit"] - quota["scans_used"], 0),
+        "scans_limit": quota["scans_limit"],
     }

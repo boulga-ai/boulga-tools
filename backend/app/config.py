@@ -12,10 +12,6 @@ class Settings(BaseSettings):
     # OpenRouter
     OPENROUTER_API_KEY: str = ""
 
-    # Copyleaks
-    COPYLEAKS_EMAIL: str = ""
-    COPYLEAKS_API_KEY: str = ""
-
     # FedaPay (branche plus tard)
     FEDAPAY_PUBLIC_KEY: str = ""
     FEDAPAY_SECRET_KEY: str = ""
