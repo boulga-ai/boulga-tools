@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { ScanSearch, Loader2, Square, Clock } from "lucide-react";
+import { ScanSearch, Loader2, Square, Clock, Upload, FileText, Plus } from "lucide-react";
 import { ToolLayout } from "@/components/tools/ToolLayout";
 import { DropZone } from "@/components/tools/DropZone";
 import { StreamingOutput } from "@/components/tools/StreamingOutput";
@@ -66,9 +66,11 @@ type ScanResult = {
 };
 
 type HistoryItem = { id: string; title: string; created_at: string };
+type Mode = "text" | "file";
 
 export default function AiDetectorPage() {
   const { profile } = useAuth();
+  const [mode, setMode] = useState<Mode>("text");
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -96,25 +98,34 @@ export default function AiDetectorPage() {
     if (res.ok) setHistory(await res.json());
   }
 
-  // Si le scan d'origine a uploade un fichier, l'historique renvoie une URL signee
-  // (file_url) vers le bucket "uploads" — on la refetch pour reconstruire un File et
-  // retrouver le rendu natif PDF/DOCX. Echec silencieux : on retombe sur le texte brut
-  // surligne, jamais casser la reouverture de l'historique pour ca.
+  // Reinitialise tout et repart en mode texte — equivalent du bouton "+" de GPTZero.
+  function resetAll() {
+    setMode("text");
+    setText("");
+    setFile(null);
+    setResult(null);
+    setScannedFile(null);
+    setLastScanKey(null);
+  }
+
+  // Seuls les scans de FICHIER sont conserves (l'historique ne renvoie que ceux-la,
+  // cote backend) — rouvrir un item bascule en mode fichier et ne touche jamais `text`,
+  // pour ne pas dupliquer le contenu entre la zone de saisie et le viewer.
   async function openHistoryItem(id: string) {
     const res = await apiFetch(`/api/v1/tools/analyzers/ai-detector/history/${id}`);
     if (!res.ok) return;
     const conversation = await res.json();
     const messages = (conversation.messages_json ?? []) as { role: string; content: string }[];
-    const userMessage = messages.find((m) => m.role === "user");
     const assistantMessage = messages.find((m) => m.role === "assistant");
-    if (!userMessage || !assistantMessage) return;
+    if (!assistantMessage) return;
     try {
       const { file_url: fileUrl, file_name: fileName, ...scanResult } = JSON.parse(
         assistantMessage.content,
       );
+      setMode("file");
+      setText("");
       setFile(null);
-      setText(userMessage.content);
-      setResult({ text: userMessage.content, ...scanResult });
+      setResult({ text: "", ...scanResult });
 
       if (fileUrl && fileName) {
         try {
@@ -135,17 +146,17 @@ export default function AiDetectorPage() {
   // Identifie ce qui serait effectivement soumis a une relance, pour detecter si le
   // texte/fichier a change depuis le dernier scan (evite de rescanner pour rien).
   function computeScanKey(): string {
-    return file ? `file:${file.name}:${file.size}` : `text:${text}`;
+    return mode === "file" && file ? `file:${file.name}:${file.size}` : `text:${text}`;
   }
   const isStale = result !== null && lastScanKey !== null && computeScanKey() !== lastScanKey;
 
   async function handleScan() {
-    if (!text.trim() && !file) return;
+    if (mode === "text" ? !text.trim() : !file) return;
     setScanning(true);
     setResult(null);
     try {
       const formData = new FormData();
-      if (file) formData.append("file", file);
+      if (mode === "file" && file) formData.append("file", file);
       else formData.append("text", text);
 
       const res = await apiFetch("/api/v1/tools/analyzers/ai-detector/scan", {
@@ -157,9 +168,9 @@ export default function AiDetectorPage() {
         throw new Error(body?.detail ?? "Échec de l'analyse.");
       }
       setLastScanKey(computeScanKey());
-      setScannedFile(file);
+      setScannedFile(mode === "file" ? file : null);
       setResult(await res.json());
-      refreshHistory();
+      if (mode === "file") refreshHistory();
     } catch (err) {
       toast.error("Analyse impossible", { description: (err as Error).message });
     } finally {
@@ -188,9 +199,10 @@ export default function AiDetectorPage() {
             <Clock className="size-3.5" />
             Historique
           </p>
+          <p className="text-xs text-muted-foreground">Fichiers analysés uniquement.</p>
           <div className="flex flex-col gap-1">
             {history.length === 0 && (
-              <p className="text-sm text-muted-foreground">Aucune analyse pour le moment.</p>
+              <p className="text-sm text-muted-foreground">Aucun fichier analysé pour le moment.</p>
             )}
             {history.map((item) => (
               <button
@@ -206,55 +218,103 @@ export default function AiDetectorPage() {
 
         <div className="order-1 flex flex-col gap-6 lg:order-2">
           <div className="flex flex-col gap-3">
-            <RichTextEditor
-              value={text}
-              onChange={(value) => {
-                setText(value);
-                setFile(null);
-              }}
-              placeholder="Collez le texte à analyser..."
-              className="min-h-32"
-              disabled={!!file}
-            />
-            <p className="text-center text-xs text-muted-foreground">ou</p>
-            <DropZone
-              onFiles={(files) => {
-                setFile(files[0]);
-                setText("");
-              }}
-              accept=".pdf,.docx,.txt"
-              label="Glissez-déposez un PDF, DOCX ou TXT, ou"
-            />
-            {file && (
-              <p className="text-sm text-muted-foreground">Fichier sélectionné : {file.name}</p>
-            )}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">
+                {mode === "text" ? "Texte collé — non conservé" : "Fichier — conservé dans l'historique"}
+              </p>
+              {(text.trim() || file || result) && (
+                <button
+                  type="button"
+                  onClick={resetAll}
+                  className="flex items-center gap-1 text-xs font-medium text-bleu-boulga hover:underline"
+                >
+                  <Plus className="size-3.5" />
+                  Nouvelle analyse
+                </button>
+              )}
+            </div>
 
-            {!text.trim() && !file && (
-              <div className="flex flex-col gap-1.5">
-                <p className="text-xs text-muted-foreground">Ou testez avec un exemple :</p>
-                <div className="flex flex-wrap gap-2">
-                  {EXAMPLES.map((ex) => (
+            {mode === "text" ? (
+              <>
+                <RichTextEditor
+                  value={text}
+                  onChange={setText}
+                  placeholder="Collez le texte à analyser..."
+                  className="min-h-32"
+                />
+                <button
+                  type="button"
+                  onClick={() => setMode("file")}
+                  className="flex w-fit items-center gap-1.5 text-xs font-medium text-bleu-boulga hover:underline"
+                >
+                  <Upload className="size-3.5" />
+                  Importer un fichier à la place
+                </button>
+
+                {!text.trim() && (
+                  <div className="flex flex-col gap-1.5">
+                    <p className="text-xs text-muted-foreground">Ou testez avec un exemple :</p>
+                    <div className="flex flex-wrap gap-2">
+                      {EXAMPLES.map((ex) => (
+                        <button
+                          key={ex.label}
+                          type="button"
+                          onClick={() => setText(ex.text)}
+                          className="rounded-[4px] border px-2.5 py-1 text-xs text-muted-foreground hover:border-bleu-boulga hover:text-bleu-boulga"
+                        >
+                          {ex.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                {file ? (
+                  <div className="flex items-center gap-2 rounded-[8px] border bg-card p-3 text-sm">
+                    <FileText className="size-4 text-muted-foreground" />
+                    <span className="flex-1 truncate">{file.name}</span>
                     <button
-                      key={ex.label}
                       type="button"
-                      onClick={() => setText(ex.text)}
-                      className="rounded-[4px] border px-2.5 py-1 text-xs text-muted-foreground hover:border-bleu-boulga hover:text-bleu-boulga"
+                      onClick={() => setFile(null)}
+                      className="text-xs text-muted-foreground hover:text-erreur"
                     >
-                      {ex.label}
+                      Retirer
                     </button>
-                  ))}
-                </div>
-              </div>
+                  </div>
+                ) : (
+                  <DropZone
+                    onFiles={(files) => setFile(files[0])}
+                    accept=".pdf,.docx,.txt"
+                    label="Glissez-déposez un PDF, DOCX ou TXT, ou"
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("text");
+                    setFile(null);
+                  }}
+                  className="flex w-fit items-center gap-1.5 text-xs font-medium text-bleu-boulga hover:underline"
+                >
+                  Coller du texte à la place
+                </button>
+              </>
             )}
 
             <div className="flex flex-wrap items-center gap-3">
-              <Button onClick={handleScan} disabled={scanning || (!text.trim() && !file)} className="w-fit">
+              <Button
+                onClick={handleScan}
+                disabled={scanning || (mode === "text" ? !text.trim() : !file)}
+                className="w-fit"
+              >
                 {scanning ? <Loader2 className="size-4 animate-spin" /> : <ScanSearch className="size-4" />}
                 {scanning ? "Analyse en cours..." : "Analyser"}
               </Button>
               {result && !scanning && (
                 <span className={isStale ? "text-xs font-medium text-attention" : "text-xs text-muted-foreground"}>
-                  {isStale ? "Texte modifié — relancez l'analyse pour un résultat à jour" : "Résultat à jour pour ce texte"}
+                  {isStale ? "Contenu modifié — relancez l'analyse pour un résultat à jour" : "Résultat à jour"}
                 </span>
               )}
             </div>
@@ -262,24 +322,39 @@ export default function AiDetectorPage() {
 
           {result && (
             <div className="flex flex-col gap-4 border-t pt-6">
-              {/* Viewer a gauche (defilement continu) / resultats a droite, comme GPTZero */}
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_360px]">
-                <UploadedDocViewer file={scannedFile} text={result.text} spans={result.flagged_spans} />
+              {mode === "file" ? (
+                // Viewer a gauche (defilement continu) / resultats a droite, comme GPTZero
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_360px]">
+                  <UploadedDocViewer file={scannedFile} text={result.text} spans={result.flagged_spans} />
 
+                  <div className="flex flex-col gap-4">
+                    <ScoreGauge
+                      aiScore={result.ai_score}
+                      mixedScore={result.mixed_score}
+                      humanScore={result.human_score}
+                    />
+                    {result.total_pages > 1 && (
+                      <PageScoreList
+                        pageScores={result.page_scores}
+                        pagesAnalyzed={result.pages_analyzed}
+                        totalPages={result.total_pages}
+                        pagesExact={result.pages_exact}
+                      />
+                    )}
+                  </div>
+                </div>
+              ) : (
                 <div className="flex flex-col gap-4">
                   <ScoreGauge
                     aiScore={result.ai_score}
                     mixedScore={result.mixed_score}
                     humanScore={result.human_score}
                   />
-                  <PageScoreList
-                    pageScores={result.page_scores}
-                    pagesAnalyzed={result.pages_analyzed}
-                    totalPages={result.total_pages}
-                    pagesExact={result.pages_exact}
-                  />
+                  <div className="rounded-[12px] border bg-card p-4 text-sm">
+                    <HighlightedText text={result.text} spans={result.flagged_spans} />
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="flex flex-col gap-3 border-t pt-4">
                 <div className="flex flex-wrap items-center gap-3">

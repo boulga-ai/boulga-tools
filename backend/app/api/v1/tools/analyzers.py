@@ -153,12 +153,13 @@ async def ai_detector_scan(
     )
     consume_scan(user["user_id"])
 
-    file_path = None
+    # Seuls les scans de FICHIER vont dans l'historique - le texte colle est ephemere
+    # par design (voir mode "texte" cote frontend, jamais persiste).
     if file_bytes is not None and file_name is not None:
         file_path = _store_uploaded_file(user["user_id"], file_bytes, file_name, content_type)
-    # result["text"] est le texte des pages retenues (post-plafond palier), pas
-    # forcement le document entier — coherent avec les offsets de flagged_spans.
-    _persist_scan(user["user_id"], "ai_detector_scan", result["text"], result, file_path, file_name)
+        # result["text"] est le texte des pages retenues (post-plafond palier), pas
+        # forcement le document entier — coherent avec les offsets de flagged_spans.
+        _persist_scan(user["user_id"], "ai_detector_scan", result["text"], result, file_path, file_name)
 
     return {"pages_exact": pages_exact, **result}
 
@@ -232,10 +233,11 @@ async def plagiarism_scan(
     )
     consume_scan(user["user_id"])
 
-    file_path = None
+    # Seuls les scans de FICHIER vont dans l'historique - le texte colle est ephemere
+    # par design (voir mode "texte" cote frontend, jamais persiste).
     if file_bytes is not None and file_name is not None:
         file_path = _store_uploaded_file(user["user_id"], file_bytes, file_name, content_type)
-    _persist_scan(user["user_id"], "plagiarism_scan", input_text, result, file_path, file_name)
+        _persist_scan(user["user_id"], "plagiarism_scan", input_text, result, file_path, file_name)
 
     return {"text": input_text, **result}
 

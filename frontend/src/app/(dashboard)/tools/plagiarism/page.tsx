@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Shield, Loader2, ExternalLink, Square, Clock } from "lucide-react";
+import { Shield, Loader2, ExternalLink, Square, Clock, Upload, FileText, Plus } from "lucide-react";
 import { ToolLayout } from "@/components/tools/ToolLayout";
 import { DropZone } from "@/components/tools/DropZone";
 import { CopyButton } from "@/components/tools/CopyButton";
@@ -63,9 +63,11 @@ type ScanResult = {
 };
 
 type HistoryItem = { id: string; title: string; created_at: string };
+type Mode = "text" | "file";
 
 export default function PlagiarismPage() {
   const { profile } = useAuth();
+  const [mode, setMode] = useState<Mode>("text");
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -91,25 +93,34 @@ export default function PlagiarismPage() {
     if (res.ok) setHistory(await res.json());
   }
 
-  // Si le scan d'origine a uploade un fichier, l'historique renvoie une URL signee
-  // (file_url) vers le bucket "uploads" — on la refetch pour reconstruire un File et
-  // retrouver le rendu natif PDF/DOCX. Echec silencieux : on retombe sur le texte brut
-  // surligne, jamais casser la reouverture de l'historique pour ca.
+  // Reinitialise tout et repart en mode texte — equivalent du bouton "+" de GPTZero.
+  function resetAll() {
+    setMode("text");
+    setText("");
+    setFile(null);
+    setResult(null);
+    setScannedFile(null);
+    setLastScanKey(null);
+  }
+
+  // Seuls les scans de FICHIER sont conserves (l'historique ne renvoie que ceux-la,
+  // cote backend) — rouvrir un item bascule en mode fichier et ne touche jamais `text`,
+  // pour ne pas dupliquer le contenu entre la zone de saisie et le viewer.
   async function openHistoryItem(id: string) {
     const res = await apiFetch(`/api/v1/tools/analyzers/plagiarism/history/${id}`);
     if (!res.ok) return;
     const conversation = await res.json();
     const messages = (conversation.messages_json ?? []) as { role: string; content: string }[];
-    const userMessage = messages.find((m) => m.role === "user");
     const assistantMessage = messages.find((m) => m.role === "assistant");
-    if (!userMessage || !assistantMessage) return;
+    if (!assistantMessage) return;
     try {
       const { file_url: fileUrl, file_name: fileName, ...scanResult } = JSON.parse(
         assistantMessage.content,
       );
+      setMode("file");
+      setText("");
       setFile(null);
-      setText(userMessage.content);
-      setResult({ text: userMessage.content, ...scanResult });
+      setResult({ text: "", ...scanResult });
 
       if (fileUrl && fileName) {
         try {
@@ -130,17 +141,17 @@ export default function PlagiarismPage() {
   // Identifie ce qui serait effectivement soumis a une relance, pour detecter si le
   // texte/fichier a change depuis le dernier scan (evite de rescanner pour rien).
   function computeScanKey(): string {
-    return file ? `file:${file.name}:${file.size}` : `text:${text}`;
+    return mode === "file" && file ? `file:${file.name}:${file.size}` : `text:${text}`;
   }
   const isStale = result !== null && lastScanKey !== null && computeScanKey() !== lastScanKey;
 
   async function handleScan() {
-    if (!text.trim() && !file) return;
+    if (mode === "text" ? !text.trim() : !file) return;
     setSubmitting(true);
     setResult(null);
     try {
       const formData = new FormData();
-      if (file) formData.append("file", file);
+      if (mode === "file" && file) formData.append("file", file);
       else formData.append("text", text);
 
       const res = await apiFetch("/api/v1/tools/analyzers/plagiarism/scan", {
@@ -152,9 +163,9 @@ export default function PlagiarismPage() {
         throw new Error(body?.detail ?? "Échec de la vérification.");
       }
       setLastScanKey(computeScanKey());
-      setScannedFile(file);
+      setScannedFile(mode === "file" ? file : null);
       setResult(await res.json());
-      refreshHistory();
+      if (mode === "file") refreshHistory();
     } catch (err) {
       toast.error("Vérification impossible", { description: (err as Error).message });
     } finally {
@@ -187,9 +198,10 @@ export default function PlagiarismPage() {
             <Clock className="size-3.5" />
             Historique
           </p>
+          <p className="text-xs text-muted-foreground">Fichiers vérifiés uniquement.</p>
           <div className="flex flex-col gap-1">
             {history.length === 0 && (
-              <p className="text-sm text-muted-foreground">Aucune vérification pour le moment.</p>
+              <p className="text-sm text-muted-foreground">Aucun fichier vérifié pour le moment.</p>
             )}
             {history.map((item) => (
               <button
@@ -204,160 +216,220 @@ export default function PlagiarismPage() {
         </div>
 
         <div className="order-1 flex flex-col gap-6 lg:order-2">
-      <div className="flex flex-col gap-3">
-        <RichTextEditor
-          value={text}
-          onChange={(value) => {
-            setText(value);
-            setFile(null);
-          }}
-          placeholder="Collez le texte à vérifier..."
-          className="min-h-32"
-          disabled={!!file}
-        />
-        <p className="text-center text-xs text-muted-foreground">ou</p>
-        <DropZone
-          onFiles={(files) => {
-            setFile(files[0]);
-            setText("");
-          }}
-          accept=".pdf,.docx,.txt"
-          label="Glissez-déposez un PDF, DOCX ou TXT, ou"
-        />
-        {file && <p className="text-sm text-muted-foreground">Fichier sélectionné : {file.name}</p>}
-
-        {!text.trim() && !file && (
-          <div className="flex flex-col gap-1.5">
-            <p className="text-xs text-muted-foreground">Ou testez avec un exemple :</p>
-            <div className="flex flex-wrap gap-2">
-              {EXAMPLES.map((ex) => (
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">
+                {mode === "text" ? "Texte collé — non conservé" : "Fichier — conservé dans l'historique"}
+              </p>
+              {(text.trim() || file || result) && (
                 <button
-                  key={ex.label}
                   type="button"
-                  onClick={() => setText(ex.text)}
-                  className="rounded-[4px] border px-2.5 py-1 text-xs text-muted-foreground hover:border-bleu-boulga hover:text-bleu-boulga"
+                  onClick={resetAll}
+                  className="flex items-center gap-1 text-xs font-medium text-bleu-boulga hover:underline"
                 >
-                  {ex.label}
+                  <Plus className="size-3.5" />
+                  Nouvelle vérification
                 </button>
-              ))}
+              )}
             </div>
-          </div>
-        )}
 
-        <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={handleScan} disabled={submitting || (!text.trim() && !file)} className="w-fit">
-            {submitting ? <Loader2 className="size-4 animate-spin" /> : <Shield className="size-4" />}
-            {submitting ? "Analyse en cours..." : "Vérifier le plagiat"}
-          </Button>
-          {result && !submitting && (
-            <span className={isStale ? "text-xs font-medium text-attention" : "text-xs text-muted-foreground"}>
-              {isStale ? "Texte modifié — relancez l'analyse pour un résultat à jour" : "Résultat à jour pour ce texte"}
-            </span>
-          )}
-        </div>
-      </div>
+            {mode === "text" ? (
+              <>
+                <RichTextEditor
+                  value={text}
+                  onChange={setText}
+                  placeholder="Collez le texte à vérifier..."
+                  className="min-h-32"
+                />
+                <button
+                  type="button"
+                  onClick={() => setMode("file")}
+                  className="flex w-fit items-center gap-1.5 text-xs font-medium text-bleu-boulga hover:underline"
+                >
+                  <Upload className="size-3.5" />
+                  Importer un fichier à la place
+                </button>
 
-      {result && (
-        <div className="flex flex-col gap-4 border-t pt-6">
-          {result.sample_word_count < LOW_CONFIDENCE_WORD_THRESHOLD && (
-            <p className="rounded-[8px] border border-attention/40 bg-attention/10 p-2.5 text-xs text-attention">
-              Ce texte fait moins de {LOW_CONFIDENCE_WORD_THRESHOLD} mots analysés : le résultat peut être moins fiable.
-            </p>
-          )}
-
-          {/* Viewer a gauche (defilement continu) / resultats a droite, comme GPTZero */}
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_360px]">
-            <UploadedDocViewer file={scannedFile} text={result.text} spans={result.flagged_spans} />
-
-            <div className="flex flex-col gap-4">
-              <div>
-                <p className="text-2xl font-semibold text-erreur">{result.similarity_score}%</p>
-                <p className="text-sm text-muted-foreground">de contenu potentiellement similaire</p>
-              </div>
-
-              <div className="flex flex-col gap-2">
-                {result.flagged_spans.length === 0 && (
-                  <p className="text-sm text-muted-foreground">Aucun passage suspect détecté.</p>
-                )}
-                {result.flagged_spans.map((span, i) => (
-                  <div key={i} className="rounded-[8px] border bg-attention/10 p-3 text-sm">
-                    <p>{span.text}</p>
-                    <div className="mt-1.5 flex items-center gap-3 text-xs text-muted-foreground">
-                      <span>{span.similarity}% de similarité</span>
-                      <a
-                        href={span.source_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex items-center gap-1 text-bleu-boulga hover:underline"
-                      >
-                        Source <ExternalLink className="size-3" />
-                      </a>
+                {!text.trim() && (
+                  <div className="flex flex-col gap-1.5">
+                    <p className="text-xs text-muted-foreground">Ou testez avec un exemple :</p>
+                    <div className="flex flex-wrap gap-2">
+                      {EXAMPLES.map((ex) => (
+                        <button
+                          key={ex.label}
+                          type="button"
+                          onClick={() => setText(ex.text)}
+                          className="rounded-[4px] border px-2.5 py-1 text-xs text-muted-foreground hover:border-bleu-boulga hover:text-bleu-boulga"
+                        >
+                          {ex.label}
+                        </button>
+                      ))}
                     </div>
                   </div>
-                ))}
-              </div>
+                )}
+              </>
+            ) : (
+              <>
+                {file ? (
+                  <div className="flex items-center gap-2 rounded-[8px] border bg-card p-3 text-sm">
+                    <FileText className="size-4 text-muted-foreground" />
+                    <span className="flex-1 truncate">{file.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => setFile(null)}
+                      className="text-xs text-muted-foreground hover:text-erreur"
+                    >
+                      Retirer
+                    </button>
+                  </div>
+                ) : (
+                  <DropZone
+                    onFiles={(files) => setFile(files[0])}
+                    accept=".pdf,.docx,.txt"
+                    label="Glissez-déposez un PDF, DOCX ou TXT, ou"
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("text");
+                    setFile(null);
+                  }}
+                  className="flex w-fit items-center gap-1.5 text-xs font-medium text-bleu-boulga hover:underline"
+                >
+                  Coller du texte à la place
+                </button>
+              </>
+            )}
+
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                onClick={handleScan}
+                disabled={submitting || (mode === "text" ? !text.trim() : !file)}
+                className="w-fit"
+              >
+                {submitting ? <Loader2 className="size-4 animate-spin" /> : <Shield className="size-4" />}
+                {submitting ? "Analyse en cours..." : "Vérifier le plagiat"}
+              </Button>
+              {result && !submitting && (
+                <span className={isStale ? "text-xs font-medium text-attention" : "text-xs text-muted-foreground"}>
+                  {isStale ? "Contenu modifié — relancez l'analyse pour un résultat à jour" : "Résultat à jour"}
+                </span>
+              )}
             </div>
           </div>
 
-          {result.flagged_spans.length > 0 && (
-            <div className="flex flex-col gap-3 border-t pt-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <h3>Corriger les passages détectés</h3>
-                {!canCorrect && (
-                  <span className="rounded-[4px] bg-blue-50 px-2 py-0.5 text-xs font-medium text-bleu-boulga">
-                    Dès le palier Goutte
-                  </span>
-                )}
-              </div>
+          {result && (
+            <div className="flex flex-col gap-4 border-t pt-6">
+              {result.sample_word_count < LOW_CONFIDENCE_WORD_THRESHOLD && (
+                <p className="rounded-[8px] border border-attention/40 bg-attention/10 p-2.5 text-xs text-attention">
+                  Ce texte fait moins de {LOW_CONFIDENCE_WORD_THRESHOLD} mots analysés : le résultat peut être moins fiable.
+                </p>
+              )}
 
-              {canCorrect ? (
-                <div className="flex flex-wrap items-center gap-3">
-                  <Select value={tone} onValueChange={(v) => setTone(v ?? undefined)}>
-                    <SelectTrigger className="w-48">
-                      <SelectValue placeholder="Ton" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {TONES.map((t) => (
-                        <SelectItem key={t.value} value={t.value}>
-                          {t.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button onClick={handleCorrect} disabled={isStreaming}>
-                    {isStreaming ? "Correction en cours..." : "Corriger les passages détectés"}
-                  </Button>
-                  {isStreaming && (
-                    <Button variant="outline" onClick={stop}>
-                      <Square className="size-4" />
-                      Arrêter
-                    </Button>
-                  )}
+              {mode === "file" ? (
+                // Viewer a gauche (defilement continu) / resultats a droite, comme GPTZero
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_360px]">
+                  <UploadedDocViewer file={scannedFile} text={result.text} spans={result.flagged_spans} />
+
+                  <ResultSummary result={result} />
                 </div>
               ) : (
-                <a href="/settings">
-                  <Button variant="outline">Voir les paliers</Button>
-                </a>
+                <ResultSummary result={result} />
               )}
 
-              {(correction || isStreaming) && (
-                <div className="rounded-[12px] border bg-card p-4 text-sm">
-                  <MarkdownContent text={correction} />
-                  {isStreaming && (
-                    <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-bleu-boulga align-text-bottom" />
+              {result.flagged_spans.length > 0 && (
+                <div className="flex flex-col gap-3 border-t pt-4">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <h3>Corriger les passages détectés</h3>
+                    {!canCorrect && (
+                      <span className="rounded-[4px] bg-blue-50 px-2 py-0.5 text-xs font-medium text-bleu-boulga">
+                        Dès le palier Goutte
+                      </span>
+                    )}
+                  </div>
+
+                  {canCorrect ? (
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Select value={tone} onValueChange={(v) => setTone(v ?? undefined)}>
+                        <SelectTrigger className="w-48">
+                          <SelectValue placeholder="Ton" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {TONES.map((t) => (
+                            <SelectItem key={t.value} value={t.value}>
+                              {t.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button onClick={handleCorrect} disabled={isStreaming}>
+                        {isStreaming ? "Correction en cours..." : "Corriger les passages détectés"}
+                      </Button>
+                      {isStreaming && (
+                        <Button variant="outline" onClick={stop}>
+                          <Square className="size-4" />
+                          Arrêter
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <a href="/settings">
+                      <Button variant="outline">Voir les paliers</Button>
+                    </a>
+                  )}
+
+                  {(correction || isStreaming) && (
+                    <div className="rounded-[12px] border bg-card p-4 text-sm">
+                      <MarkdownContent text={correction} />
+                      {isStreaming && (
+                        <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-bleu-boulga align-text-bottom" />
+                      )}
+                    </div>
+                  )}
+                  {error && <GenerationError message={error} isQuotaError={isQuotaError} onRetry={handleCorrect} />}
+                  {correction && !isStreaming && (
+                    <CopyButton text={correction} label="Copier la correction" variant="outline" className="w-fit" />
                   )}
                 </div>
-              )}
-              {error && <GenerationError message={error} isQuotaError={isQuotaError} onRetry={handleCorrect} />}
-              {correction && !isStreaming && (
-                <CopyButton text={correction} label="Copier la correction" variant="outline" className="w-fit" />
               )}
             </div>
           )}
-        </div>
-      )}
         </div>
       </div>
     </ToolLayout>
+  );
+}
+
+function ResultSummary({ result }: { result: ScanResult }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <p className="text-2xl font-semibold text-erreur">{result.similarity_score}%</p>
+        <p className="text-sm text-muted-foreground">de contenu potentiellement similaire</p>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        {result.flagged_spans.length === 0 && (
+          <p className="text-sm text-muted-foreground">Aucun passage suspect détecté.</p>
+        )}
+        {result.flagged_spans.map((span, i) => (
+          <div key={i} className="rounded-[8px] border bg-attention/10 p-3 text-sm">
+            <p>{span.text}</p>
+            <div className="mt-1.5 flex items-center gap-3 text-xs text-muted-foreground">
+              <span>{span.similarity}% de similarité</span>
+              <a
+                href={span.source_url}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-1 text-bleu-boulga hover:underline"
+              >
+                Source <ExternalLink className="size-3" />
+              </a>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

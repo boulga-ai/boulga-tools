@@ -1,3 +1,21 @@
+function Pill({
+  score,
+  label,
+  colorClass,
+}: {
+  score: number;
+  label: string;
+  colorClass: string;
+}) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium ${colorClass}`}
+    >
+      {score}% {label}
+    </span>
+  );
+}
+
 export function ScoreGauge({
   aiScore,
   humanScore,
@@ -14,27 +32,16 @@ export function ScoreGauge({
   mixedLabel?: string;
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex h-3 w-full overflow-hidden rounded-full bg-muted">
-        <div className="bg-erreur" style={{ width: `${aiScore}%` }} />
-        {mixedScore !== undefined && (
-          <div className="bg-attention" style={{ width: `${mixedScore}%` }} />
-        )}
-        <div className="bg-succes" style={{ width: `${humanScore}%` }} />
-      </div>
-      <div className="flex justify-between text-sm">
-        <span className="text-erreur">
-          {aiScore}% {aiLabel}
-        </span>
-        {mixedScore !== undefined && (
-          <span className="text-attention">
-            {mixedScore}% {mixedLabel}
-          </span>
-        )}
-        <span className="text-succes">
-          {humanScore}% {humanLabel}
-        </span>
-      </div>
+    <div className="flex flex-wrap items-center gap-2">
+      <Pill score={aiScore} label={aiLabel} colorClass="border-erreur/30 bg-erreur/10 text-erreur" />
+      {mixedScore !== undefined && (
+        <Pill
+          score={mixedScore}
+          label={mixedLabel}
+          colorClass="border-attention/30 bg-attention/10 text-attention"
+        />
+      )}
+      <Pill score={humanScore} label={humanLabel} colorClass="border-succes/30 bg-succes/10 text-succes" />
     </div>
   );
 }
