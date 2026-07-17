@@ -1,8 +1,19 @@
+// frontend/src/app/%28dashboard%29/tools/ai-detector/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { ScanSearch, Loader2, Square, Clock, Plus, Download } from "lucide-react";
+import {
+  ScanSearch,
+  Loader2,
+  Square,
+  History,
+  Plus,
+  Download,
+  Upload,
+  X,
+  FileText,
+} from "lucide-react";
 import { ToolLayout } from "@/components/tools/ToolLayout";
 import { DropZone } from "@/components/tools/DropZone";
 import { StreamingOutput } from "@/components/tools/StreamingOutput";
@@ -19,6 +30,19 @@ import { CopyButton } from "@/components/tools/CopyButton";
 import { GenerationError } from "@/components/tools/GenerationError";
 import { RichTextEditor } from "@/components/tools/RichTextEditor";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
 import {
   Select,
   SelectContent,
@@ -94,6 +118,11 @@ export default function AiDetectorPage() {
   // Meme logique "a la demande" que le detail page par page, pour la liste des phrases
   // signalees (equivalent de l'onglet "AI Sentences" de GPTZero).
   const [showSentences, setShowSentences] = useState(false);
+  // Modale de depot de fichier (barre superieure du viewer) et tiroir d'historique
+  // (barre superieure aussi) — remplacent la colonne fixe et la dropzone pleine largeur
+  // d'avant, pattern GPTZero : le document domine, tout le reste est a la demande.
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
   // Fichier reellement analyse par le dernier scan reussi — distinct de `file` (la
   // selection courante), qui peut changer avant qu'on relance une analyse (cf.
   // indicateur "texte modifie"). Evite d'afficher le rendu natif d'un fichier qui ne
@@ -227,6 +256,13 @@ export default function AiDetectorPage() {
     await start("/api/v1/tools/analyzers/ai-detector/rewrite", { text: result.text, tone });
   }
 
+  // Texte affiche dans le compteur de la barre inferieure : celui du dernier resultat
+  // une fois disponible (coherent avec ce qui est reellement analyse), sinon le texte en
+  // cours de saisie en mode texte. En mode fichier avant scan, rien a compter (le texte
+  // n'est extrait que cote backend).
+  const counterText = result ? result.text : mode === "text" ? text : "";
+  const showCounter = result !== null || (mode === "text" && text.trim().length > 0);
+
   return (
     <ToolLayout
       title="Détecteur de contenu IA"
@@ -236,25 +272,14 @@ export default function AiDetectorPage() {
           Score gratuit
         </span>
       }
+      wide
     >
-      <div className="grid flex-1 grid-cols-1 gap-4 lg:grid-cols-[200px_1fr]">
-        <div className="order-2 flex flex-col gap-2 lg:order-1">
-          <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            <Clock className="size-3.5" />
-            Historique
-          </p>
-          <p className="text-xs text-muted-foreground">Fichiers analysés uniquement.</p>
-          <HistoryList
-            items={history}
-            onSelect={openHistoryItem}
-            emptyLabel="Aucun fichier analysé pour le moment."
-            scoreLabel="IA"
-          />
-        </div>
-
-        <div className="order-1 flex flex-col gap-6 lg:order-2">
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="grid flex-1 grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
+        {/* Colonne gauche — viewer/editeur, dominant, façon GPTZero */}
+        <div className="flex flex-col gap-3 rounded-[12px] border bg-card p-3">
+          {/* Barre superieure */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
               <ModeToggle
                 mode={mode}
                 onChange={(m) => {
@@ -263,6 +288,35 @@ export default function AiDetectorPage() {
                   setEditingText(true);
                 }}
               />
+              {mode === "file" &&
+                (file ? (
+                  <div className="flex items-center gap-1.5 rounded-[8px] border bg-background px-2.5 py-1.5 text-xs">
+                    <span className="max-w-40 truncate">{file.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => setFile(null)}
+                      className="text-muted-foreground hover:text-erreur"
+                      title="Retirer le fichier"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <Button variant="outline" size="sm" onClick={() => setUploadModalOpen(true)}>
+                    <Upload className="size-3.5" />
+                    Charger un fichier
+                  </Button>
+                ))}
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setHistoryDrawerOpen(true)}
+                className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-bleu-boulga"
+              >
+                <History className="size-3.5" />
+                Historique
+              </button>
               {(text.trim() || file || result) && (
                 <button
                   type="button"
@@ -274,15 +328,18 @@ export default function AiDetectorPage() {
                 </button>
               )}
             </div>
+          </div>
 
+          {/* Zone principale */}
+          <div className="flex min-h-[420px] flex-1 flex-col">
             {mode === "text" ? (
               showTextEditor ? (
-                <>
+                <div className="flex flex-1 flex-col gap-2">
                   <RichTextEditor
                     value={text}
                     onChange={setText}
                     placeholder="Collez le texte à analyser..."
-                    className="min-h-32"
+                    className="min-h-[380px] flex-1"
                   />
                   {!text.trim() && (
                     <div className="flex flex-col gap-1.5">
@@ -301,10 +358,10 @@ export default function AiDetectorPage() {
                       </div>
                     </div>
                   )}
-                </>
+                </div>
               ) : (
                 result && (
-                  <div className="flex flex-col gap-1.5">
+                  <div className="flex flex-1 flex-col gap-1.5">
                     <div className="flex items-center justify-between">
                       <p className="text-xs font-medium uppercase text-muted-foreground">
                         Texte analysé
@@ -317,35 +374,34 @@ export default function AiDetectorPage() {
                         Modifier
                       </button>
                     </div>
-                    <div className="min-h-32 rounded-lg border p-2.5 text-sm">
+                    <div className="flex-1 overflow-y-auto rounded-lg border p-2.5 text-sm">
                       <HighlightedText text={result.text} spans={result.flagged_spans} />
                     </div>
                   </div>
                 )
               )
+            ) : !file ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-[8px] border border-dashed p-8 text-center text-sm text-muted-foreground">
+                <FileText className="size-6" />
+                Aucun fichier chargé.
+                <Button variant="outline" size="sm" onClick={() => setUploadModalOpen(true)}>
+                  <Upload className="size-3.5" />
+                  Charger un fichier
+                </Button>
+              </div>
+            ) : !result || isStale ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-[8px] border border-dashed p-8 text-center text-sm text-muted-foreground">
+                <FileText className="size-6" />
+                <span className="font-medium text-foreground">{file.name}</span>
+                <span>Cliquez sur « Analyser » pour lancer le scan.</span>
+              </div>
             ) : (
-              <>
-                {file ? (
-                  <div className="flex items-center gap-2 rounded-[8px] border bg-card p-3 text-sm">
-                    <span className="flex-1 truncate">{file.name}</span>
-                    <button
-                      type="button"
-                      onClick={() => setFile(null)}
-                      className="text-xs text-muted-foreground hover:text-erreur"
-                    >
-                      Retirer
-                    </button>
-                  </div>
-                ) : (
-                  <DropZone
-                    onFiles={(files) => setFile(files[0])}
-                    accept=".pdf,.docx,.txt"
-                    label="Glissez-déposez un PDF, DOCX ou TXT, ou"
-                  />
-                )}
-              </>
+              <UploadedDocViewer file={scannedFile} text={result.text} spans={result.flagged_spans} />
             )}
+          </div>
 
+          {/* Barre inferieure */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
             <Button
               onClick={handleScan}
               disabled={scanning || (mode === "text" ? !text.trim() : !file)}
@@ -354,112 +410,89 @@ export default function AiDetectorPage() {
               {scanning ? <Loader2 className="size-4 animate-spin" /> : <ScanSearch className="size-4" />}
               {scanning ? "Analyse en cours..." : "Analyser"}
             </Button>
-          </div>
-
-          {result && (
-            <div className="flex flex-col gap-4 border-t pt-6">
-              {mode === "file" ? (
-                // Viewer a gauche (defilement continu, dominant) / resultats a droite dans une
-                // colonne resserree, comme GPTZero — le fichier occupe l'essentiel de l'espace.
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_280px]">
-                  <UploadedDocViewer file={scannedFile} text={result.text} spans={result.flagged_spans} />
-
-                  <div className="flex flex-col gap-4">
-                    <div className="flex items-center gap-3">
-                      <ScoreRing score={result.ai_score} label="IA" />
-                      <p className="text-sm text-muted-foreground">
-                        {confidenceSentence(result.ai_score, "ce texte a été généré par IA")}
-                      </p>
-                    </div>
-                    <ScoreGauge
-                      aiScore={result.ai_score}
-                      mixedScore={result.mixed_score}
-                      humanScore={result.human_score}
-                    />
-                    {result.total_pages > 1 && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => setShowPageDetails((v) => !v)}
-                          className="flex w-fit items-center gap-1 text-xs font-medium text-bleu-boulga hover:underline"
-                        >
-                          {showPageDetails ? "Vue simple" : "Détail page par page"}
-                        </button>
-                        {showPageDetails && (
-                          <PageScoreList
-                            pageScores={result.page_scores}
-                            pagesAnalyzed={result.pages_analyzed}
-                            totalPages={result.total_pages}
-                            pagesExact={result.pages_exact}
-                          />
-                        )}
-                      </>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setShowSentences((v) => !v)}
-                      className="flex w-fit items-center gap-1 text-xs font-medium text-bleu-boulga hover:underline"
-                    >
-                      {showSentences ? "Vue simple" : "Phrases signalées"}
-                    </button>
-                    {showSentences && (
-                      <AiSentenceList text={result.text} spans={result.flagged_spans} />
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-4">
-                  <div className="flex items-center gap-3">
-                    <ScoreRing score={result.ai_score} label="IA" />
-                    <p className="text-sm text-muted-foreground">
-                      {confidenceSentence(result.ai_score, "ce texte a été généré par IA")}
-                    </p>
-                  </div>
-                  <ScoreGauge
-                    aiScore={result.ai_score}
-                    mixedScore={result.mixed_score}
-                    humanScore={result.human_score}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowSentences((v) => !v)}
-                    className="flex w-fit items-center gap-1 text-xs font-medium text-bleu-boulga hover:underline"
-                  >
-                    {showSentences ? "Vue simple" : "Phrases signalées"}
-                  </button>
-                  {showSentences && (
-                    <AiSentenceList text={result.text} spans={result.flagged_spans} />
-                  )}
-                </div>
-              )}
-
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
-                <div className="flex items-center gap-3">
-                  {mode === "file" && result.conversation_id && (
-                    <FeedbackButtons
-                      endpoint="/api/v1/tools/analyzers/ai-detector/feedback"
-                      conversationId={result.conversation_id}
-                    />
-                  )}
-                  <button
-                    type="button"
-                    onClick={handleExport}
-                    className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-bleu-boulga"
-                  >
-                    <Download className="size-3.5" />
-                    Exporter
-                  </button>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              {result && (
+                <>
                   <span className={isStale ? "font-medium text-attention" : undefined}>
                     {isStale ? "Contenu modifié — relancez l'analyse" : "Résultat à jour"}
                   </span>
-                  <span>·</span>
-                  <span>
-                    {result.text.length.toLocaleString("fr-FR")} caractères •{" "}
-                    {countWords(result.text).toLocaleString("fr-FR")} mots
-                  </span>
-                </div>
+                  {showCounter && <span>·</span>}
+                </>
+              )}
+              {showCounter && (
+                <span>
+                  {counterText.length.toLocaleString("fr-FR")} caractères •{" "}
+                  {countWords(counterText).toLocaleString("fr-FR")} mots
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Colonne droite — resultats et actions, compacte */}
+        <div className="flex flex-col gap-4">
+          {!result ? (
+            <p className="text-sm text-muted-foreground">
+              Lancez une analyse pour voir les résultats.
+            </p>
+          ) : (
+            <>
+              <div className="flex items-center gap-3">
+                <ScoreRing score={result.ai_score} label="IA" />
+                <p className="text-sm text-muted-foreground">
+                  {confidenceSentence(result.ai_score, "ce texte a été généré par IA")}
+                </p>
+              </div>
+              <ScoreGauge
+                aiScore={result.ai_score}
+                mixedScore={result.mixed_score}
+                humanScore={result.human_score}
+              />
+
+              <button
+                type="button"
+                onClick={() => setShowSentences((v) => !v)}
+                className="flex w-fit items-center gap-1 text-xs font-medium text-bleu-boulga hover:underline"
+              >
+                {showSentences ? "Vue simple" : "Phrases signalées"}
+              </button>
+              {showSentences && <AiSentenceList text={result.text} spans={result.flagged_spans} />}
+
+              {result.total_pages > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowPageDetails((v) => !v)}
+                    className="flex w-fit items-center gap-1 text-xs font-medium text-bleu-boulga hover:underline"
+                  >
+                    {showPageDetails ? "Vue simple" : "Détail page par page"}
+                  </button>
+                  {showPageDetails && (
+                    <PageScoreList
+                      pageScores={result.page_scores}
+                      pagesAnalyzed={result.pages_analyzed}
+                      totalPages={result.total_pages}
+                      pagesExact={result.pages_exact}
+                    />
+                  )}
+                </>
+              )}
+
+              <div className="flex flex-wrap items-center gap-3 border-t pt-3">
+                {mode === "file" && result.conversation_id && (
+                  <FeedbackButtons
+                    endpoint="/api/v1/tools/analyzers/ai-detector/feedback"
+                    conversationId={result.conversation_id}
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={handleExport}
+                  className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-bleu-boulga"
+                >
+                  <Download className="size-3.5" />
+                  Exporter
+                </button>
               </div>
 
               <div className="flex flex-col gap-3 border-t pt-4">
@@ -503,7 +536,7 @@ export default function AiDetectorPage() {
                 )}
 
                 {(rewritten || isStreaming) && (
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="flex flex-col gap-4">
                     <div>
                       <p className="mb-1.5 text-xs font-medium text-muted-foreground">Original</p>
                       <div className="min-h-32 rounded-[12px] border bg-card p-4 text-sm">
@@ -523,10 +556,48 @@ export default function AiDetectorPage() {
                   <CopyButton text={rewritten} label="Copier la version réécrite" variant="outline" className="w-fit" />
                 )}
               </div>
-            </div>
+            </>
           )}
         </div>
       </div>
+
+      {/* Modale de depot de fichier */}
+      <Dialog open={uploadModalOpen} onOpenChange={setUploadModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Charger un fichier</DialogTitle>
+          </DialogHeader>
+          <DropZone
+            onFiles={(files) => {
+              setFile(files[0]);
+              setUploadModalOpen(false);
+            }}
+            accept=".pdf,.docx,.txt"
+            label="Glissez-déposez un PDF, DOCX ou TXT, ou"
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* Tiroir d'historique */}
+      <Sheet open={historyDrawerOpen} onOpenChange={setHistoryDrawerOpen}>
+        <SheetContent side="left">
+          <SheetHeader>
+            <SheetTitle>Historique</SheetTitle>
+            <SheetDescription>Fichiers analysés uniquement.</SheetDescription>
+          </SheetHeader>
+          <div className="flex-1 overflow-y-auto px-4 pb-4">
+            <HistoryList
+              items={history}
+              onSelect={(id) => {
+                openHistoryItem(id);
+                setHistoryDrawerOpen(false);
+              }}
+              emptyLabel="Aucun fichier analysé pour le moment."
+              scoreLabel="IA"
+            />
+          </div>
+        </SheetContent>
+      </Sheet>
     </ToolLayout>
   );
 }
