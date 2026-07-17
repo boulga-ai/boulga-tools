@@ -44,7 +44,11 @@ def _extract_docx_pages(content: bytes) -> tuple[list[str], bool]:
         pages.append("\n".join(current))
 
     if found_manual_break:
-        return [p.strip() for p in pages if p.strip()], True
+        # Ne pas retirer les pages individuellement vides ici, meme raison que pour le
+        # PDF (voir extract_pages) : la position dans la liste EST le numero de "Section"
+        # affiche a l'utilisateur, une page blanche entre deux coupures manuelles doit
+        # rester a sa place plutot que decaler les suivantes.
+        return [p.strip() for p in pages], True
 
     full_text = "\n".join(pages).strip()
     words = full_text.split()
@@ -82,9 +86,19 @@ def extract_pages(filename: str, content: bytes) -> tuple[list[str], bool]:
     else:
         raise ExtractionError(f"Format de fichier non supporte : .{ext}")
 
-    pages = [p for p in pages if p.strip()]
-    if not pages:
-        raise ExtractionError("Aucun texte n'a pu etre extrait de ce fichier.")
+    if exact:
+        # Ne PAS retirer les pages individuellement vides ici : leur position dans la
+        # liste EST le numero de page (1-indexe) utilise partout en aval (page_scores,
+        # et cote frontend le rendu pdf.js qui affiche les vraies pages du PDF). Une
+        # page sans texte extractible (image seule, page blanche...) doit rester a sa
+        # place comme page "trop courte" — la retirer decale tout ce qui suit d'un cran
+        # et fait correspondre le score de la page N au texte reel de la page N+1.
+        if not any(p.strip() for p in pages):
+            raise ExtractionError("Aucun texte n'a pu etre extrait de ce fichier.")
+    else:
+        pages = [p for p in pages if p.strip()]
+        if not pages:
+            raise ExtractionError("Aucun texte n'a pu etre extrait de ce fichier.")
 
     # Filet de securite global, coherent avec l'ancienne limite extract_text : on
     # n'accumule pas indefiniment meme sur un document a des dizaines de pages denses.

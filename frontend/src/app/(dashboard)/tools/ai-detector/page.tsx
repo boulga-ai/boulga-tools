@@ -10,6 +10,7 @@ import { ScoreGauge } from "@/components/tools/ScoreGauge";
 import { HighlightedText } from "@/components/tools/HighlightedText";
 import { UploadedDocViewer } from "@/components/tools/UploadedDocViewer";
 import { PageScoreList } from "@/components/tools/PageScoreList";
+import { AiSentenceList } from "@/components/tools/AiSentenceList";
 import { ScoreRing } from "@/components/tools/ScoreRing";
 import { HistoryList, type HistoryItem } from "@/components/tools/HistoryList";
 import { FeedbackButtons } from "@/components/tools/FeedbackButtons";
@@ -90,6 +91,9 @@ export default function AiDetectorPage() {
   // Vue simple par defaut (score global + quelques details), comme le "Basic Scan" de
   // GPTZero — le detail page par page est disponible a la demande, pas impose d'emblee.
   const [showPageDetails, setShowPageDetails] = useState(false);
+  // Meme logique "a la demande" que le detail page par page, pour la liste des phrases
+  // signalees (equivalent de l'onglet "AI Sentences" de GPTZero).
+  const [showSentences, setShowSentences] = useState(false);
   // Fichier reellement analyse par le dernier scan reussi — distinct de `file` (la
   // selection courante), qui peut changer avant qu'on relance une analyse (cf.
   // indicateur "texte modifie"). Evite d'afficher le rendu natif d'un fichier qui ne
@@ -123,6 +127,7 @@ export default function AiDetectorPage() {
     setScannedFile(null);
     setLastScanKey(null);
     setShowPageDetails(false);
+    setShowSentences(false);
   }
 
   // Seuls les scans de FICHIER sont conserves (l'historique ne renvoie que ceux-la,
@@ -390,6 +395,16 @@ export default function AiDetectorPage() {
                         )}
                       </>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => setShowSentences((v) => !v)}
+                      className="flex w-fit items-center gap-1 text-xs font-medium text-bleu-boulga hover:underline"
+                    >
+                      {showSentences ? "Vue simple" : "Phrases signalées"}
+                    </button>
+                    {showSentences && (
+                      <AiSentenceList text={result.text} spans={result.flagged_spans} />
+                    )}
                   </div>
                 </div>
               ) : (
@@ -405,6 +420,16 @@ export default function AiDetectorPage() {
                     mixedScore={result.mixed_score}
                     humanScore={result.human_score}
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowSentences((v) => !v)}
+                    className="flex w-fit items-center gap-1 text-xs font-medium text-bleu-boulga hover:underline"
+                  >
+                    {showSentences ? "Vue simple" : "Phrases signalées"}
+                  </button>
+                  {showSentences && (
+                    <AiSentenceList text={result.text} spans={result.flagged_spans} />
+                  )}
                 </div>
               )}
 
