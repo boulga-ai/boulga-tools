@@ -68,8 +68,12 @@ export function RichTextEditor({
     }
   }, [value, editor]);
 
+  // Meme piege que setContent : setEditable() emet aussi un update par defaut
+  // (emitUpdate=true), qui rappellerait onChange() a chaque bascule disabled/enabled
+  // (ex. quand un fichier est selectionne, disabled passe a true) — false explicite
+  // requis pour ne pas rappeler onChange() en dehors d'une vraie frappe utilisateur.
   useEffect(() => {
-    editor?.setEditable(!disabled);
+    editor?.setEditable(!disabled, false);
   }, [disabled, editor]);
 
   return (
