@@ -10,6 +10,7 @@ import { ScoreGauge } from "@/components/tools/ScoreGauge";
 import { HighlightedText } from "@/components/tools/HighlightedText";
 import { UploadedDocViewer } from "@/components/tools/UploadedDocViewer";
 import { PageScoreList } from "@/components/tools/PageScoreList";
+import { ScoreRing } from "@/components/tools/ScoreRing";
 import { HistoryList, type HistoryItem } from "@/components/tools/HistoryList";
 import { FeedbackButtons } from "@/components/tools/FeedbackButtons";
 import { ModeToggle } from "@/components/tools/ModeToggle";
@@ -28,6 +29,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useStreaming } from "@/hooks/useStreaming";
 import { apiFetch } from "@/lib/api";
 import { confidenceSentence } from "@/lib/confidence";
+import { highlightTier } from "@/lib/highlightTier";
 import { downloadTextReport } from "@/lib/export";
 
 const TONES = [
@@ -63,7 +65,7 @@ type ScanResult = {
   ai_score: number;
   mixed_score: number;
   human_score: number;
-  flagged_spans: { start: number; end: number }[];
+  flagged_spans: { start: number; end: number; ai_score: number }[];
   page_scores: PageScore[];
   pages_analyzed: number;
   total_pages: number;
@@ -85,6 +87,9 @@ export default function AiDetectorPage() {
   const [scanning, setScanning] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
   const [editingText, setEditingText] = useState(true);
+  // Vue simple par defaut (score global + quelques details), comme le "Basic Scan" de
+  // GPTZero — le detail page par page est disponible a la demande, pas impose d'emblee.
+  const [showPageDetails, setShowPageDetails] = useState(false);
   // Fichier reellement analyse par le dernier scan reussi — distinct de `file` (la
   // selection courante), qui peut changer avant qu'on relance une analyse (cf.
   // indicateur "texte modifie"). Evite d'afficher le rendu natif d'un fichier qui ne
@@ -117,6 +122,7 @@ export default function AiDetectorPage() {
     setEditingText(true);
     setScannedFile(null);
     setLastScanKey(null);
+    setShowPageDetails(false);
   }
 
   // Seuls les scans de FICHIER sont conserves (l'historique ne renvoie que ceux-la,
@@ -195,14 +201,15 @@ export default function AiDetectorPage() {
 
   function handleExport() {
     if (!result) return;
+    const flagged = result.flagged_spans.filter((s) => highlightTier(s.ai_score) !== null);
     const lines = [
       "Détecteur de contenu IA — Boulga AI",
       `Score IA : ${result.ai_score}% — Mixte : ${result.mixed_score}% — Humain : ${result.human_score}%`,
       "",
       "Passages signalés :",
-      ...(result.flagged_spans.length === 0
+      ...(flagged.length === 0
         ? ["(aucun)"]
-        : result.flagged_spans.map((s) => `- "${result.text.slice(s.start, s.end)}"`)),
+        : flagged.map((s) => `- (${s.ai_score}% IA) "${result.text.slice(s.start, s.end)}"`)),
       "",
       "Texte analysé :",
       result.text,
@@ -347,34 +354,52 @@ export default function AiDetectorPage() {
           {result && (
             <div className="flex flex-col gap-4 border-t pt-6">
               {mode === "file" ? (
-                // Viewer a gauche (defilement continu) / resultats a droite, comme GPTZero
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_360px]">
+                // Viewer a gauche (defilement continu, dominant) / resultats a droite dans une
+                // colonne resserree, comme GPTZero — le fichier occupe l'essentiel de l'espace.
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_280px]">
                   <UploadedDocViewer file={scannedFile} text={result.text} spans={result.flagged_spans} />
 
                   <div className="flex flex-col gap-4">
-                    <p className="text-sm text-muted-foreground">
-                      {confidenceSentence(result.ai_score, "ce texte a été généré par IA")}
-                    </p>
+                    <div className="flex items-center gap-3">
+                      <ScoreRing score={result.ai_score} label="IA" />
+                      <p className="text-sm text-muted-foreground">
+                        {confidenceSentence(result.ai_score, "ce texte a été généré par IA")}
+                      </p>
+                    </div>
                     <ScoreGauge
                       aiScore={result.ai_score}
                       mixedScore={result.mixed_score}
                       humanScore={result.human_score}
                     />
                     {result.total_pages > 1 && (
-                      <PageScoreList
-                        pageScores={result.page_scores}
-                        pagesAnalyzed={result.pages_analyzed}
-                        totalPages={result.total_pages}
-                        pagesExact={result.pages_exact}
-                      />
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setShowPageDetails((v) => !v)}
+                          className="flex w-fit items-center gap-1 text-xs font-medium text-bleu-boulga hover:underline"
+                        >
+                          {showPageDetails ? "Vue simple" : "Détail page par page"}
+                        </button>
+                        {showPageDetails && (
+                          <PageScoreList
+                            pageScores={result.page_scores}
+                            pagesAnalyzed={result.pages_analyzed}
+                            totalPages={result.total_pages}
+                            pagesExact={result.pages_exact}
+                          />
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
               ) : (
                 <div className="flex flex-col gap-4">
-                  <p className="text-sm text-muted-foreground">
-                    {confidenceSentence(result.ai_score, "ce texte a été généré par IA")}
-                  </p>
+                  <div className="flex items-center gap-3">
+                    <ScoreRing score={result.ai_score} label="IA" />
+                    <p className="text-sm text-muted-foreground">
+                      {confidenceSentence(result.ai_score, "ce texte a été généré par IA")}
+                    </p>
+                  </div>
                   <ScoreGauge
                     aiScore={result.ai_score}
                     mixedScore={result.mixed_score}

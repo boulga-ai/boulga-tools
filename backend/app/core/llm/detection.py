@@ -164,14 +164,16 @@ async def detect_ai_content(pages: list[str], tier: str, model: str) -> tuple[di
     )
 
     flagged_spans = []
-    for item in data.get("assessment") or []:
+    for item in data.get("sentences") or []:
         if not isinstance(item, dict):
             continue
         span = _locate_span(combined_text, item.get("quote"))
         if span is None:
             continue
         start, end = span
-        flagged_spans.append({"start": start, "end": end, "reason": item.get("reason", "")})
+        flagged_spans.append(
+            {"start": start, "end": end, "ai_score": _clamp_score(item.get("ai_score"))}
+        )
 
     page_scores = []
     for i, item in enumerate((data.get("pages") or [])[: len(selected_pages)]):

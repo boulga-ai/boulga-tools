@@ -30,15 +30,19 @@ SYSTEM_PROMPT = (
     '"too_short": <bool>}], '
     '"ai_score": <0-100, verdict global sur tout le document fourni>, '
     '"mixed_score": <0-100>, "human_score": <0-100>, les trois devant sommer à 100, '
-    '"assessment": [{"quote": "<citation verbatim du texte, 8 à 25 mots>", '
-    '"reason": "<pourquoi ce passage semble généré>"}], '
+    '"sentences": [{"quote": "<phrase exacte du texte>", "ai_score": <0-100>}], '
     '"summary": "<une phrase résumant le verdict global>"}\n\n'
     "Le tableau \"pages\" DOIT contenir une entrée par page fournie, dans l'ordre. "
     "Chaque \"quote\" DOIT être une citation exacte, mot pour mot, d'un passage du "
-    "texte fourni — jamais une paraphrase. Limite \"assessment\" aux 3 à 5 passages les "
-    "plus révélateurs sur l'ensemble du document. Si le texte semble entièrement "
-    "humain, renvoie un ai_score et un mixed_score bas, et une liste \"assessment\" "
-    "vide."
+    "texte fourni — jamais une paraphrase.\n\n"
+    "\"sentences\" DOIT découper l'INTÉGRALITÉ du texte fourni en phrases (une entrée "
+    "par phrase, dans l'ordre du texte) et attribuer un ai_score à CHACUNE — y compris "
+    "les phrases manifestement humaines, qui reçoivent un score bas. N'omets aucune "
+    "phrase substantielle : ce n'est pas une sélection des passages les plus "
+    "révélateurs, c'est une couverture complète qui permettra de surligner "
+    "uniquement les phrases au score élevé, avec une intensité proportionnelle à leur "
+    "score. Ignore uniquement les fragments non significatifs (titres isolés, numéros "
+    "de page, puces vides)."
 )
 
 

@@ -1,9 +1,15 @@
 import Mark from "mark.js";
+import { highlightTier, type HighlightTier } from "@/lib/highlightTier";
+
+const TIER_CLASS: Record<Exclude<HighlightTier, null>, string> = {
+  light: "bg-attention/25 rounded-[2px]",
+  strong: "bg-attention/55 rounded-[2px]",
+};
 
 // Portage TS de la meme logique que backend/app/core/llm/detection.py
 // (_build_flexible_pattern) : une citation extraite d'un texte peut ne pas matcher au
-// caractere pres dans un rendu natif (PDF/DOCX) a cause de differences d'espaces/sauts
-// de ligne/apostrophes typographiques entre l'extraction backend et le rendu frontend.
+// caractere pres dans le rendu natif du PDF a cause de differences d'espaces/sauts de
+// ligne/apostrophes typographiques entre l'extraction backend et le rendu frontend.
 const APOSTROPHE_VARIANTS = "['’‘ʼ`´]";
 
 function escapeRegExp(word: string): string {
@@ -24,16 +30,23 @@ export function buildFlexiblePattern(quote: string): RegExp | null {
 }
 
 // Efface les surlignages existants dans le conteneur puis reapplique un pour chaque
-// citation — utilise par PdfViewer (couche texte pdf.js) et DocxViewer (rendu
-// docx-preview), meme comportement dans les deux cas.
-export function applyHighlights(container: HTMLElement, highlights: string[]): void {
+// citation — utilise par PdfViewer (couche texte pdf.js), seul format avec un rendu
+// natif pagine (DOCX/TXT/texte colle passent par HighlightedText, cf.
+// UploadedDocViewer). L'intensite depend du score : rien en dessous du seuil "humain",
+// plus marque a mesure que le score IA monte, comme chez GPTZero.
+export function applyHighlights(
+  container: HTMLElement,
+  highlights: { text: string; score: number }[],
+): void {
   const instance = new Mark(container);
   instance.unmark({
     done: () => {
-      for (const quote of highlights) {
-        const pattern = buildFlexiblePattern(quote);
+      for (const { text, score } of highlights) {
+        const tier = highlightTier(score);
+        if (tier === null) continue;
+        const pattern = buildFlexiblePattern(text);
         if (pattern) {
-          instance.markRegExp(pattern, { className: "bg-attention/40 rounded-[2px]" });
+          instance.markRegExp(pattern, { className: TIER_CLASS[tier] });
         }
       }
     },

@@ -11,6 +11,7 @@ import { MarkdownContent } from "@/components/tools/MarkdownContent";
 import { RichTextEditor } from "@/components/tools/RichTextEditor";
 import { UploadedDocViewer } from "@/components/tools/UploadedDocViewer";
 import { HighlightedText } from "@/components/tools/HighlightedText";
+import { ScoreRing } from "@/components/tools/ScoreRing";
 import { HistoryList, type HistoryItem } from "@/components/tools/HistoryList";
 import { FeedbackButtons } from "@/components/tools/FeedbackButtons";
 import { ModeToggle } from "@/components/tools/ModeToggle";
@@ -353,8 +354,9 @@ export default function PlagiarismPage() {
               )}
 
               {mode === "file" ? (
-                // Viewer a gauche (defilement continu) / resultats a droite, comme GPTZero
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_360px]">
+                // Viewer a gauche (defilement continu, dominant) / resultats a droite dans une
+                // colonne resserree, comme GPTZero — le fichier occupe l'essentiel de l'espace.
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_280px]">
                   <UploadedDocViewer file={scannedFile} text={result.text} spans={result.flagged_spans} />
 
                   <ResultSummary result={result} />
@@ -458,14 +460,12 @@ export default function PlagiarismPage() {
 function ResultSummary({ result }: { result: ScanResult }) {
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <p className="text-2xl font-semibold text-erreur">{result.similarity_score}%</p>
-        <p className="text-sm text-muted-foreground">de contenu potentiellement similaire</p>
+      <div className="flex items-center gap-3">
+        <ScoreRing score={result.similarity_score} label="Plagiat" />
+        <p className="text-sm text-muted-foreground">
+          {confidenceSentence(result.similarity_score, "ce texte contient du contenu plagié")}
+        </p>
       </div>
-
-      <p className="text-sm text-muted-foreground">
-        {confidenceSentence(result.similarity_score, "ce texte contient du contenu plagié")}
-      </p>
 
       <div className="flex flex-col gap-2">
         {result.flagged_spans.length === 0 && (

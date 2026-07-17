@@ -15,7 +15,9 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 ).toString();
 
 const CONTAINER_PADDING = 12; // p-1.5 des deux cotes (6px + 6px)
-const DEFAULT_PAGE_WIDTH = 640;
+// Plafond releve : la colonne resultats est desormais resserree (280px), le fichier
+// doit occuper l'essentiel de l'espace disponible plutot que rester confine a 640px.
+const DEFAULT_PAGE_WIDTH = 820;
 
 // Composant importe uniquement via next/dynamic({ ssr: false }) par les pages
 // appelantes : pdfjs-dist touche des API navigateur (Worker, DOMMatrix...) absentes
@@ -25,7 +27,9 @@ const DEFAULT_PAGE_WIDTH = 640;
 // vertical continu, comme un lecteur PDF classique / GPTZero) plutot qu'une page a la
 // fois avec navigation — le surlignage s'applique sur l'ensemble du conteneur, donc
 // mark.js retrouve chaque citation quelle que soit la page ou elle se trouve.
-export function PdfViewer({ file, highlights }: { file: File; highlights: string[] }) {
+type Highlight = { text: string; score: number };
+
+export function PdfViewer({ file, highlights }: { file: File; highlights: Highlight[] }) {
   const [numPages, setNumPages] = useState(0);
   // Largeur mesuree du conteneur (pas une valeur fixe) : une colonne resserree
   // (ex. a cote du panneau de resultats) ne doit jamais faire deborder/couper la page
