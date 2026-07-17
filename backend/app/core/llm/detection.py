@@ -29,6 +29,13 @@ MAX_TOTAL_PAGE_CHARS = 20_000
 # (OpenRouter/Exa facture par resultat, voir client.py).
 PLAGIARISM_SEARCH_PLUGINS = [{"id": "web", "max_results": 3}]
 
+# Memes seuils que frontend/src/lib/highlightTier.ts (70/40) — le score affiche (global
+# et par page) DOIT correspondre exactement a la proportion de texte surlignee a chaque
+# palier, jamais a un chiffre independant fourni par le LLM sans lien avec les phrases
+# reellement reperees (cf. detect_ai_content).
+AI_TIER_THRESHOLD = 70.0
+MIXED_TIER_THRESHOLD = 40.0
+
 
 def _clamp_score(value: object) -> float:
     try:
@@ -50,6 +57,31 @@ def _normalize_three_way(ai: float, mixed: float, human: float) -> tuple[float, 
     mixed_scaled = round(mixed * scale, 1)
     human_scaled = round(100 - ai_scaled - mixed_scaled, 1)
     return ai_scaled, mixed_scaled, human_scaled
+
+
+def _weighted_tier_pcts(spans: list[dict], scope_length: int) -> tuple[float, float, float]:
+    """Deduit (ai, mixed, human)_score de la proportion de caracteres — ponderee par
+    longueur de phrase — couverte par des spans localises a chaque palier. Le score
+    affiche a l'utilisateur est ainsi TOUJOURS la meme donnee que ce qui est
+    visuellement surligne, jamais un chiffre independant : impossible d'annoncer un
+    score eleve pendant qu'une page reste presque entierement non surlignee."""
+    if scope_length <= 0:
+        return 0.0, 0.0, 100.0
+    ai_chars = 0
+    mixed_chars = 0
+    for span in spans:
+        length = span["end"] - span["start"]
+        score = span["ai_score"]
+        if score >= AI_TIER_THRESHOLD:
+            ai_chars += length
+        elif score >= MIXED_TIER_THRESHOLD:
+            mixed_chars += length
+    human_chars = max(0, scope_length - ai_chars - mixed_chars)
+    return _normalize_three_way(
+        100 * ai_chars / scope_length,
+        100 * mixed_chars / scope_length,
+        100 * human_chars / scope_length,
+    )
 
 
 def _build_flexible_pattern(quote: str) -> re.Pattern[str] | None:
@@ -146,6 +178,16 @@ async def detect_ai_content(pages: list[str], tier: str, model: str) -> tuple[di
         f"--- PAGE {i + 1} ---\n{page}" for i, page in enumerate(selected_pages)
     )
 
+    # Bornes (start, end) de chaque page dans combined_text — permet d'attribuer chaque
+    # phrase localisee a sa page d'origine sans redemander quoi que ce soit au LLM.
+    page_ranges: list[tuple[int, int]] = []
+    offset = 0
+    for page in selected_pages:
+        start = offset
+        end = start + len(page)
+        page_ranges.append((start, end))
+        offset = end + 2  # separateur "\n\n"
+
     messages = [
         {"role": "system", "content": ai_content_detection.SYSTEM_PROMPT},
         {
@@ -156,12 +198,6 @@ async def detect_ai_content(pages: list[str], tier: str, model: str) -> tuple[di
         },
     ]
     data, usage = await complete_json(model, messages)
-
-    ai_score, mixed_score, human_score = _normalize_three_way(
-        _clamp_score(data.get("ai_score")),
-        _clamp_score(data.get("mixed_score")),
-        _clamp_score(data.get("human_score")),
-    )
 
     flagged_spans = []
     for item in data.get("sentences") or []:
@@ -175,16 +211,24 @@ async def detect_ai_content(pages: list[str], tier: str, model: str) -> tuple[di
             {"start": start, "end": end, "ai_score": _clamp_score(item.get("ai_score"))}
         )
 
+    # Score global : derive des memes spans que ceux surlignes, jamais d'un chiffre
+    # separe (voir _weighted_tier_pcts).
+    ai_score, mixed_score, human_score = _weighted_tier_pcts(flagged_spans, len(combined_text))
+
     page_scores = []
-    for i, item in enumerate((data.get("pages") or [])[: len(selected_pages)]):
-        if not isinstance(item, dict):
+    for i, page_text in enumerate(selected_pages):
+        too_short = len(page_text.strip()) < ai_content_detection.TOO_SHORT_CHAR_THRESHOLD
+        if too_short:
+            page_scores.append({"page": i + 1, "ai_score": None, "too_short": True})
             continue
-        too_short = bool(item.get("too_short"))
+        page_start, page_end = page_ranges[i]
+        spans_in_page = [s for s in flagged_spans if page_start <= s["start"] < page_end]
+        page_ai_pct, page_mixed_pct, _ = _weighted_tier_pcts(spans_in_page, page_end - page_start)
         page_scores.append(
             {
                 "page": i + 1,
-                "ai_score": None if too_short else _clamp_score(item.get("ai_score")),
-                "too_short": too_short,
+                "ai_score": round(page_ai_pct + page_mixed_pct, 1),
+                "too_short": False,
             }
         )
 
