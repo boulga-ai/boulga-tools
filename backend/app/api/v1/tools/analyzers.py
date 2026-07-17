@@ -17,7 +17,7 @@ from app.core.usage import log_usage
 from app.dependencies import check_quota_dep, get_current_user
 from app.models.analyzers import AiRewriteRequest, PlagiarismCorrectRequest
 from app.utils.storage import create_signed_url, upload_file
-from app.utils.text_extraction import ExtractionError, extract_text
+from app.utils.text_extraction import ExtractionError, extract_pages
 
 router = APIRouter(
     prefix="/tools/analyzers", tags=["analyzers"], dependencies=[Depends(rate_limit_dep)]
@@ -84,21 +84,24 @@ def _attach_file_url(conversation: dict) -> dict:
     return conversation
 
 
-async def _resolve_input_text(
+async def _resolve_input_pages(
     text: str | None, file: UploadFile | None
-) -> tuple[str, bytes | None, str | None, str | None]:
-    """Renvoie (texte_extrait, octets_bruts, nom_fichier, content_type). Les 3 derniers
-    sont None si l'entree est du texte colle (pas de fichier a persister)."""
+) -> tuple[list[str], bool, bytes | None, str | None, str | None]:
+    """Renvoie (pages, pages_exact, octets_bruts, nom_fichier, content_type). Les 3
+    derniers sont None si l'entree est du texte colle (pas de fichier a persister).
+    pages_exact indique si les frontieres de page sont fiables (PDF ; DOCX avec
+    coupures manuelles) ou approximees (DOCX sans coupures, decoupe par mots ; texte
+    colle, une seule "page" par definition)."""
     if file is not None:
         content = await file.read()
         try:
-            extracted = extract_text(file.filename or "fichier.txt", content)
+            pages, exact = extract_pages(file.filename or "fichier.txt", content)
         except ExtractionError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-        return extracted, content, file.filename, file.content_type
+        return pages, exact, content, file.filename, file.content_type
 
     if text and text.strip():
-        return text.strip(), None, None, None
+        return [text.strip()], True, None, None, None
 
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
@@ -124,7 +127,9 @@ async def ai_detector_scan(
     file: UploadFile | None = None,
     user: dict = Depends(check_quota_dep("scans")),
 ) -> dict:
-    input_text, file_bytes, file_name, content_type = await _resolve_input_text(text, file)
+    pages, pages_exact, file_bytes, file_name, content_type = await _resolve_input_pages(
+        text, file
+    )
 
     try:
         model = resolve_model("ai_detector_scan", user["tier"])
@@ -132,7 +137,7 @@ async def ai_detector_scan(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
 
     try:
-        result, usage = await detect_ai_content(input_text, model)
+        result, usage = await detect_ai_content(pages, user["tier"], model)
     except OpenRouterError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
@@ -151,9 +156,11 @@ async def ai_detector_scan(
     file_path = None
     if file_bytes is not None and file_name is not None:
         file_path = _store_uploaded_file(user["user_id"], file_bytes, file_name, content_type)
-    _persist_scan(user["user_id"], "ai_detector_scan", input_text, result, file_path, file_name)
+    # result["text"] est le texte des pages retenues (post-plafond palier), pas
+    # forcement le document entier — coherent avec les offsets de flagged_spans.
+    _persist_scan(user["user_id"], "ai_detector_scan", result["text"], result, file_path, file_name)
 
-    return {"text": input_text, **result}
+    return {"pages_exact": pages_exact, **result}
 
 
 @router.get("/ai-detector/history")
@@ -200,7 +207,8 @@ async def plagiarism_scan(
     file: UploadFile | None = None,
     user: dict = Depends(check_quota_dep("scans")),
 ) -> dict:
-    input_text, file_bytes, file_name, content_type = await _resolve_input_text(text, file)
+    pages, _, file_bytes, file_name, content_type = await _resolve_input_pages(text, file)
+    input_text = "\n\n".join(pages)
 
     try:
         model = resolve_model("plagiarism_scan", user["tier"])

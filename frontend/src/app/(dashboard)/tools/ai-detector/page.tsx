@@ -9,6 +9,7 @@ import { StreamingOutput } from "@/components/tools/StreamingOutput";
 import { ScoreGauge } from "@/components/tools/ScoreGauge";
 import { HighlightedText } from "@/components/tools/HighlightedText";
 import { UploadedDocViewer } from "@/components/tools/UploadedDocViewer";
+import { PageScoreList } from "@/components/tools/PageScoreList";
 import { CopyButton } from "@/components/tools/CopyButton";
 import { GenerationError } from "@/components/tools/GenerationError";
 import { RichTextEditor } from "@/components/tools/RichTextEditor";
@@ -50,9 +51,7 @@ const EXAMPLES = [
   },
 ];
 
-// GPTZero avertit en dessous de 100 mots — meme seuil ici, le score devient moins
-// fiable sur un echantillon aussi court.
-const LOW_CONFIDENCE_WORD_THRESHOLD = 100;
+type PageScore = { page: number; ai_score: number | null; too_short: boolean };
 
 type ScanResult = {
   text: string;
@@ -60,7 +59,10 @@ type ScanResult = {
   mixed_score: number;
   human_score: number;
   flagged_spans: { start: number; end: number }[];
-  sample_word_count: number;
+  page_scores: PageScore[];
+  pages_analyzed: number;
+  total_pages: number;
+  pages_exact: boolean;
 };
 
 type HistoryItem = { id: string; title: string; created_at: string };
@@ -203,133 +205,145 @@ export default function AiDetectorPage() {
         </div>
 
         <div className="order-1 flex flex-col gap-6 lg:order-2">
-      <div className="flex flex-col gap-3">
-        <RichTextEditor
-          value={text}
-          onChange={(value) => {
-            setText(value);
-            setFile(null);
-          }}
-          placeholder="Collez le texte à analyser..."
-          className="min-h-32"
-          disabled={!!file}
-        />
-        <p className="text-center text-xs text-muted-foreground">ou</p>
-        <DropZone
-          onFiles={(files) => {
-            setFile(files[0]);
-            setText("");
-          }}
-          accept=".pdf,.docx,.txt"
-          label="Glissez-déposez un PDF, DOCX ou TXT, ou"
-        />
-        {file && <p className="text-sm text-muted-foreground">Fichier sélectionné : {file.name}</p>}
+          <div className="flex flex-col gap-3">
+            <RichTextEditor
+              value={text}
+              onChange={(value) => {
+                setText(value);
+                setFile(null);
+              }}
+              placeholder="Collez le texte à analyser..."
+              className="min-h-32"
+              disabled={!!file}
+            />
+            <p className="text-center text-xs text-muted-foreground">ou</p>
+            <DropZone
+              onFiles={(files) => {
+                setFile(files[0]);
+                setText("");
+              }}
+              accept=".pdf,.docx,.txt"
+              label="Glissez-déposez un PDF, DOCX ou TXT, ou"
+            />
+            {file && (
+              <p className="text-sm text-muted-foreground">Fichier sélectionné : {file.name}</p>
+            )}
 
-        {!text.trim() && !file && (
-          <div className="flex flex-col gap-1.5">
-            <p className="text-xs text-muted-foreground">Ou testez avec un exemple :</p>
-            <div className="flex flex-wrap gap-2">
-              {EXAMPLES.map((ex) => (
-                <button
-                  key={ex.label}
-                  type="button"
-                  onClick={() => setText(ex.text)}
-                  className="rounded-[4px] border px-2.5 py-1 text-xs text-muted-foreground hover:border-bleu-boulga hover:text-bleu-boulga"
-                >
-                  {ex.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+            {!text.trim() && !file && (
+              <div className="flex flex-col gap-1.5">
+                <p className="text-xs text-muted-foreground">Ou testez avec un exemple :</p>
+                <div className="flex flex-wrap gap-2">
+                  {EXAMPLES.map((ex) => (
+                    <button
+                      key={ex.label}
+                      type="button"
+                      onClick={() => setText(ex.text)}
+                      className="rounded-[4px] border px-2.5 py-1 text-xs text-muted-foreground hover:border-bleu-boulga hover:text-bleu-boulga"
+                    >
+                      {ex.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
-        <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={handleScan} disabled={scanning || (!text.trim() && !file)} className="w-fit">
-            {scanning ? <Loader2 className="size-4 animate-spin" /> : <ScanSearch className="size-4" />}
-            {scanning ? "Analyse en cours..." : "Analyser"}
-          </Button>
-          {result && !scanning && (
-            <span className={isStale ? "text-xs font-medium text-attention" : "text-xs text-muted-foreground"}>
-              {isStale ? "Texte modifié — relancez l'analyse pour un résultat à jour" : "Résultat à jour pour ce texte"}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {result && (
-        <div className="flex flex-col gap-4 border-t pt-6">
-          {result.sample_word_count < LOW_CONFIDENCE_WORD_THRESHOLD && (
-            <p className="rounded-[8px] border border-attention/40 bg-attention/10 p-2.5 text-xs text-attention">
-              Ce texte fait moins de {LOW_CONFIDENCE_WORD_THRESHOLD} mots analysés : le résultat peut être moins fiable.
-            </p>
-          )}
-          <ScoreGauge aiScore={result.ai_score} mixedScore={result.mixed_score} humanScore={result.human_score} />
-
-          <UploadedDocViewer file={scannedFile} text={result.text} spans={result.flagged_spans} />
-
-          <div className="flex flex-col gap-3 border-t pt-4">
             <div className="flex flex-wrap items-center gap-3">
-              <h3>Réécrire dans un autre ton</h3>
-              {!canRewrite && (
-                <span className="rounded-[4px] bg-blue-50 px-2 py-0.5 text-xs font-medium text-bleu-boulga">
-                  Disponible dès le palier Goutte
+              <Button onClick={handleScan} disabled={scanning || (!text.trim() && !file)} className="w-fit">
+                {scanning ? <Loader2 className="size-4 animate-spin" /> : <ScanSearch className="size-4" />}
+                {scanning ? "Analyse en cours..." : "Analyser"}
+              </Button>
+              {result && !scanning && (
+                <span className={isStale ? "text-xs font-medium text-attention" : "text-xs text-muted-foreground"}>
+                  {isStale ? "Texte modifié — relancez l'analyse pour un résultat à jour" : "Résultat à jour pour ce texte"}
                 </span>
               )}
             </div>
+          </div>
 
-            {canRewrite ? (
-              <div className="flex flex-wrap items-center gap-3">
-                <Select value={tone} onValueChange={(v) => setTone(v ?? undefined)}>
-                  <SelectTrigger className="w-48">
-                    <SelectValue placeholder="Ton" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {TONES.map((t) => (
-                      <SelectItem key={t.value} value={t.value}>
-                        {t.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button onClick={handleRewrite} disabled={isStreaming}>
-                  {isStreaming ? "Réécriture en cours..." : "Réécrire"}
-                </Button>
-                {isStreaming && (
-                  <Button variant="outline" onClick={stop}>
-                    <Square className="size-4" />
-                    Arrêter
-                  </Button>
+          {result && (
+            <div className="flex flex-col gap-4 border-t pt-6">
+              {/* Viewer a gauche (defilement continu) / resultats a droite, comme GPTZero */}
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_360px]">
+                <UploadedDocViewer file={scannedFile} text={result.text} spans={result.flagged_spans} />
+
+                <div className="flex flex-col gap-4">
+                  <ScoreGauge
+                    aiScore={result.ai_score}
+                    mixedScore={result.mixed_score}
+                    humanScore={result.human_score}
+                  />
+                  <PageScoreList
+                    pageScores={result.page_scores}
+                    pagesAnalyzed={result.pages_analyzed}
+                    totalPages={result.total_pages}
+                    pagesExact={result.pages_exact}
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3 border-t pt-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <h3>Réécrire dans un autre ton</h3>
+                  {!canRewrite && (
+                    <span className="rounded-[4px] bg-blue-50 px-2 py-0.5 text-xs font-medium text-bleu-boulga">
+                      Disponible dès le palier Goutte
+                    </span>
+                  )}
+                </div>
+
+                {canRewrite ? (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Select value={tone} onValueChange={(v) => setTone(v ?? undefined)}>
+                      <SelectTrigger className="w-48">
+                        <SelectValue placeholder="Ton" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {TONES.map((t) => (
+                          <SelectItem key={t.value} value={t.value}>
+                            {t.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button onClick={handleRewrite} disabled={isStreaming}>
+                      {isStreaming ? "Réécriture en cours..." : "Réécrire"}
+                    </Button>
+                    {isStreaming && (
+                      <Button variant="outline" onClick={stop}>
+                        <Square className="size-4" />
+                        Arrêter
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  <a href="/settings">
+                    <Button variant="outline">Voir les paliers</Button>
+                  </a>
+                )}
+
+                {(rewritten || isStreaming) && (
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div>
+                      <p className="mb-1.5 text-xs font-medium text-muted-foreground">Original</p>
+                      <div className="min-h-32 rounded-[12px] border bg-card p-4 text-sm">
+                        <HighlightedText text={result.text} spans={result.flagged_spans} />
+                      </div>
+                    </div>
+                    <div>
+                      <p className="mb-1.5 text-xs font-medium text-muted-foreground">
+                        Version réécrite
+                      </p>
+                      <StreamingOutput text={rewritten} isStreaming={isStreaming} />
+                    </div>
+                  </div>
+                )}
+                {error && <GenerationError message={error} isQuotaError={isQuotaError} onRetry={handleRewrite} />}
+                {rewritten && !isStreaming && (
+                  <CopyButton text={rewritten} label="Copier la version réécrite" variant="outline" className="w-fit" />
                 )}
               </div>
-            ) : (
-              <a href="/settings">
-                <Button variant="outline">Voir les paliers</Button>
-              </a>
-            )}
-
-            {(rewritten || isStreaming) && (
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div>
-                  <p className="mb-1.5 text-xs font-medium text-muted-foreground">Original</p>
-                  <div className="min-h-32 rounded-[12px] border bg-card p-4 text-sm">
-                    <HighlightedText text={result.text} spans={result.flagged_spans} />
-                  </div>
-                </div>
-                <div>
-                  <p className="mb-1.5 text-xs font-medium text-muted-foreground">
-                    Version réécrite
-                  </p>
-                  <StreamingOutput text={rewritten} isStreaming={isStreaming} />
-                </div>
-              </div>
-            )}
-            {error && <GenerationError message={error} isQuotaError={isQuotaError} onRetry={handleRewrite} />}
-            {rewritten && !isStreaming && (
-              <CopyButton text={rewritten} label="Copier la version réécrite" variant="outline" className="w-fit" />
-            )}
-          </div>
-        </div>
-      )}
+            </div>
+          )}
         </div>
       </div>
     </ToolLayout>

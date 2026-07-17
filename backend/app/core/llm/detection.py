@@ -2,16 +2,28 @@ import re
 
 from app.core.llm.client import complete_json
 from app.core.llm.prompts import ai_content_detection, plagiarism_detection
+from app.core.llm.router import TIER_GROUPS
 
 # Variantes d'apostrophe/guillemet simple rencontrees selon l'origine du texte (saisie
 # directe, extraction PDF/DOCX) et la normalisation que le LLM applique en "citant" un
 # passage - toutes doivent matcher la meme citation.
 _APOSTROPHE_VARIANTS = "['’‘ʼ`´]"
 
-# Texte tronque avant analyse : un echantillon suffit pour un score heuristique, et ca
-# plafonne le cout token meme sur un document proche de la limite de 50 000 caracteres
-# du formulaire (voir plan de detection LLM interimaire).
+# Texte tronque avant analyse (plagiat uniquement, cf. detect_plagiarism) : un
+# echantillon suffit pour un score heuristique, et ca plafonne le cout token meme sur un
+# document proche de la limite de 50 000 caracteres du formulaire.
 MAX_DETECTION_CHARS = 12_000
+
+# Nombre de pages analysees pour le detecteur IA, selon le palier — meme regroupement
+# que le routing des modeles (TIER_GROUPS). Un seul appel LLM couvre toutes les pages
+# retenues (pas un appel par page, qui multiplierait le cout par la longueur du doc).
+PAGE_LIMITS = {
+    "introduction": 3,
+    "goutte_source": 10,
+    "fleuve_ocean": 40,
+}
+# Filet de securite cout meme sur peu de pages tres denses.
+MAX_TOTAL_PAGE_CHARS = 20_000
 
 # Recherche web (plagiat uniquement) : plafonnee a 3 resultats pour contenir le cout
 # (OpenRouter/Exa facture par resultat, voir client.py).
@@ -68,14 +80,45 @@ def _locate_span(text: str, quote: object) -> tuple[int, int] | None:
     return match.start(), match.end()
 
 
-async def detect_ai_content(text: str, model: str) -> tuple[dict, dict]:
-    """Estime la probabilite qu'un texte soit genere par IA via un LLM dedie (solution
-    interimaire en attendant l'integration Originality.ai). Renvoie
-    ({ai_score, human_score, flagged_spans}, usage)."""
-    sample = text[:MAX_DETECTION_CHARS]
+def _select_pages(pages: list[str], tier: str) -> list[str]:
+    """Retient les N premieres pages selon le palier (voir PAGE_LIMITS), puis applique
+    un filet de securite en caracteres cumules au cas ou ces pages seraient tres
+    denses."""
+    group = TIER_GROUPS.get(tier, "introduction")
+    max_pages = PAGE_LIMITS.get(group, PAGE_LIMITS["introduction"])
+    selected = pages[:max_pages]
+
+    capped: list[str] = []
+    total = 0
+    for page in selected:
+        if total >= MAX_TOTAL_PAGE_CHARS:
+            break
+        remaining = MAX_TOTAL_PAGE_CHARS - total
+        capped.append(page[:remaining])
+        total += len(page[:remaining])
+    return capped
+
+
+async def detect_ai_content(pages: list[str], tier: str, model: str) -> tuple[dict, dict]:
+    """Estime la probabilite qu'un texte soit genere par IA, page par page, via un LLM
+    dedie (solution interimaire en attendant l'integration Originality.ai). Un seul
+    appel LLM couvre toutes les pages retenues pour ce palier (voir _select_pages).
+    Renvoie ({ai_score, mixed_score, human_score, page_scores, flagged_spans, text,
+    pages_analyzed, total_pages}, usage)."""
+    selected_pages = _select_pages(pages, tier)
+    combined_text = "\n\n".join(selected_pages)
+    paginated_text = "\n\n".join(
+        f"--- PAGE {i + 1} ---\n{page}" for i, page in enumerate(selected_pages)
+    )
+
     messages = [
         {"role": "system", "content": ai_content_detection.SYSTEM_PROMPT},
-        {"role": "user", "content": ai_content_detection.build_user_message(sample)},
+        {
+            "role": "user",
+            "content": ai_content_detection.build_user_message(
+                paginated_text, len(selected_pages)
+            ),
+        },
     ]
     data, usage = await complete_json(model, messages)
 
@@ -84,22 +127,39 @@ async def detect_ai_content(text: str, model: str) -> tuple[dict, dict]:
         _clamp_score(data.get("mixed_score")),
         _clamp_score(data.get("human_score")),
     )
+
     flagged_spans = []
     for item in data.get("assessment") or []:
         if not isinstance(item, dict):
             continue
-        span = _locate_span(sample, item.get("quote"))
+        span = _locate_span(combined_text, item.get("quote"))
         if span is None:
             continue
         start, end = span
         flagged_spans.append({"start": start, "end": end, "reason": item.get("reason", "")})
 
+    page_scores = []
+    for i, item in enumerate((data.get("pages") or [])[: len(selected_pages)]):
+        if not isinstance(item, dict):
+            continue
+        too_short = bool(item.get("too_short"))
+        page_scores.append(
+            {
+                "page": i + 1,
+                "ai_score": None if too_short else _clamp_score(item.get("ai_score")),
+                "too_short": too_short,
+            }
+        )
+
     result = {
+        "text": combined_text,
         "ai_score": ai_score,
         "mixed_score": mixed_score,
         "human_score": human_score,
+        "page_scores": page_scores,
         "flagged_spans": flagged_spans,
-        "sample_word_count": len(sample.split()),
+        "pages_analyzed": len(selected_pages),
+        "total_pages": len(pages),
     }
     return result, usage
 

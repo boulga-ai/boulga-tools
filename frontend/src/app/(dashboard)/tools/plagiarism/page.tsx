@@ -264,33 +264,39 @@ export default function PlagiarismPage() {
               Ce texte fait moins de {LOW_CONFIDENCE_WORD_THRESHOLD} mots analysés : le résultat peut être moins fiable.
             </p>
           )}
-          <div>
-            <p className="text-2xl font-semibold text-erreur">{result.similarity_score}%</p>
-            <p className="text-sm text-muted-foreground">de contenu potentiellement similaire</p>
-          </div>
 
-          <UploadedDocViewer file={scannedFile} text={result.text} spans={result.flagged_spans} />
+          {/* Viewer a gauche (defilement continu) / resultats a droite, comme GPTZero */}
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_360px]">
+            <UploadedDocViewer file={scannedFile} text={result.text} spans={result.flagged_spans} />
 
-          <div className="flex flex-col gap-2">
-            {result.flagged_spans.length === 0 && (
-              <p className="text-sm text-muted-foreground">Aucun passage suspect détecté.</p>
-            )}
-            {result.flagged_spans.map((span, i) => (
-              <div key={i} className="rounded-[8px] border bg-attention/10 p-3 text-sm">
-                <p>{span.text}</p>
-                <div className="mt-1.5 flex items-center gap-3 text-xs text-muted-foreground">
-                  <span>{span.similarity}% de similarité</span>
-                  <a
-                    href={span.source_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center gap-1 text-bleu-boulga hover:underline"
-                  >
-                    Source <ExternalLink className="size-3" />
-                  </a>
-                </div>
+            <div className="flex flex-col gap-4">
+              <div>
+                <p className="text-2xl font-semibold text-erreur">{result.similarity_score}%</p>
+                <p className="text-sm text-muted-foreground">de contenu potentiellement similaire</p>
               </div>
-            ))}
+
+              <div className="flex flex-col gap-2">
+                {result.flagged_spans.length === 0 && (
+                  <p className="text-sm text-muted-foreground">Aucun passage suspect détecté.</p>
+                )}
+                {result.flagged_spans.map((span, i) => (
+                  <div key={i} className="rounded-[8px] border bg-attention/10 p-3 text-sm">
+                    <p>{span.text}</p>
+                    <div className="mt-1.5 flex items-center gap-3 text-xs text-muted-foreground">
+                      <span>{span.similarity}% de similarité</span>
+                      <a
+                        href={span.source_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1 text-bleu-boulga hover:underline"
+                      >
+                        Source <ExternalLink className="size-3" />
+                      </a>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
 
           {result.flagged_spans.length > 0 && (
