@@ -55,12 +55,16 @@ export function RichTextEditor({
   });
 
   // Resynchronise seulement si la valeur externe diverge reellement de ce que l'editeur
-  // affiche (reset apres soumission, choix d'un exemple cliquable...) — sinon on
-  // ecraserait la position du curseur a chaque frappe.
+  // affiche (reset apres soumission, choix d'un exemple cliquable, depot d'un fichier
+  // qui vide le texte...) — sinon on ecraserait la position du curseur a chaque frappe.
+  // emitUpdate: false est essentiel ici : setContent() declenche onUpdate par defaut,
+  // ce qui rappellerait onChange() et donc, cote appelant, ecraserait un etat qui vient
+  // d'etre pose au meme rendu (ex. un fichier tout juste selectionne se faisait
+  // immediatement effacer par ce rebouclage).
   useEffect(() => {
     if (!editor) return;
     if (editor.getText() !== value) {
-      editor.commands.setContent(value);
+      editor.commands.setContent(value, { emitUpdate: false });
     }
   }, [value, editor]);
 
