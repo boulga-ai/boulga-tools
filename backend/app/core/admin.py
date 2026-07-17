@@ -157,9 +157,9 @@ def set_user_tier(user_id: str, tier: str) -> None:
 
 def reset_user_quota(user_id: str) -> None:
     client = get_service_client()
-    client.table("quotas").update({"words_used": 0, "downloads_used": 0}).eq(
-        "user_id", user_id
-    ).eq("period", _current_period()).execute()
+    client.table("quotas").update(
+        {"words_used": 0, "downloads_used": 0, "scans_used": 0}
+    ).eq("user_id", user_id).eq("period", _current_period()).execute()
 
 
 def get_costs(period: str) -> list[dict]:
