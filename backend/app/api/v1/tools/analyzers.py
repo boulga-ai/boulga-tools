@@ -5,8 +5,9 @@ from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
 from sse_starlette.sse import EventSourceResponse
 
 from app.api.v1.tools.transformers import _run_stream_tool
-from app.core.conversations import get_conversation, list_conversations, save_conversation
+from app.core.conversations import get_conversation, save_conversation
 from app.core.llm.client import OpenRouterError, compute_cost
+from app.db.supabase import get_service_client
 from app.core.llm.detection import detect_ai_content, detect_plagiarism
 from app.core.llm.prompts import plagiarism as plagiarism_prompts
 from app.core.llm.prompts.ai_rewrite import build_system_prompt
@@ -15,7 +16,7 @@ from app.core.quota import consume_scan
 from app.core.rate_limit import rate_limit_dep
 from app.core.usage import log_usage
 from app.dependencies import check_quota_dep, get_current_user
-from app.models.analyzers import AiRewriteRequest, PlagiarismCorrectRequest
+from app.models.analyzers import AiRewriteRequest, PlagiarismCorrectRequest, ScanFeedbackRequest
 from app.utils.storage import create_signed_url, upload_file
 from app.utils.text_extraction import ExtractionError, extract_pages
 
@@ -37,18 +38,21 @@ def _persist_scan(
     result: dict,
     file_path: str | None = None,
     file_name: str | None = None,
-) -> None:
+) -> str | None:
     """Journalise un scan dans l'historique (reutilise la table conversations : le
     resultat structure — scores, passages signales — est stocke tel quel en JSON dans
     le message assistant, pas de nouvelle table pour ce format specifique). Si un
     fichier a ete uploade, son chemin de stockage prive est inclus (jamais l'URL
-    signee, qui expire) - voir _attach_file_url pour la resolution a la lecture."""
+    signee, qui expire) - voir _attach_file_url pour la resolution a la lecture.
+    Renvoie l'id de la conversation creee (None si la persistance a echoue) - permet au
+    frontend de rattacher un vote de feedback au scan tout juste effectue, sans attendre
+    de le rouvrir depuis l'historique."""
     try:
         payload = dict(result)
         if file_path:
             payload["file_path"] = file_path
             payload["file_name"] = file_name
-        save_conversation(
+        created = save_conversation(
             user_id,
             tool,
             title=input_text[:50],
@@ -57,8 +61,57 @@ def _persist_scan(
                 {"role": "assistant", "content": json.dumps(payload)},
             ],
         )
+        return created.get("id")
     except Exception:
-        pass  # le scan a deja ete livre a l'utilisateur ; ne pas casser la reponse
+        return None  # le scan a deja ete livre a l'utilisateur ; ne pas casser la reponse
+
+
+def _list_scan_history(user_id: str, tool: str, score_key: str) -> list[dict]:
+    """Comme conversations.list_conversations, mais inclut un score resume par entree
+    (extrait du message assistant) pour l'affichage en badge cote historique.
+    list_conversations reste generique (partagee avec email_writer) et n'est pas
+    touchee - requete dediee ici plutot que de la faire porter un besoin specifique
+    aux outils de detection."""
+    client = get_service_client()
+    result = (
+        client.table("conversations")
+        .select("id, title, created_at, messages_json")
+        .eq("user_id", user_id)
+        .eq("tool", tool)
+        .order("updated_at", desc=True)
+        .execute()
+    )
+    items = []
+    for row in result.data or []:
+        score = None
+        for message in row.get("messages_json") or []:
+            if message.get("role") != "assistant":
+                continue
+            try:
+                payload = json.loads(message["content"])
+            except (json.JSONDecodeError, KeyError, TypeError):
+                continue
+            score = payload.get(score_key)
+            break
+        items.append(
+            {
+                "id": row["id"],
+                "title": row.get("title"),
+                "created_at": row.get("created_at"),
+                "score": score,
+            }
+        )
+    return items
+
+
+def _save_feedback(user_id: str, conversation_id: str, helpful: bool) -> None:
+    """Enregistre un pouce haut/bas sur un scan (upsert : un second vote remplace le
+    premier plutot que d'en accumuler plusieurs, cf. contrainte UNIQUE en base)."""
+    client = get_service_client()
+    client.table("scan_feedback").upsert(
+        {"conversation_id": conversation_id, "user_id": user_id, "helpful": helpful},
+        on_conflict="conversation_id,user_id",
+    ).execute()
 
 
 def _attach_file_url(conversation: dict) -> dict:
@@ -155,18 +208,21 @@ async def ai_detector_scan(
 
     # Seuls les scans de FICHIER vont dans l'historique - le texte colle est ephemere
     # par design (voir mode "texte" cote frontend, jamais persiste).
+    conversation_id = None
     if file_bytes is not None and file_name is not None:
         file_path = _store_uploaded_file(user["user_id"], file_bytes, file_name, content_type)
         # result["text"] est le texte des pages retenues (post-plafond palier), pas
         # forcement le document entier — coherent avec les offsets de flagged_spans.
-        _persist_scan(user["user_id"], "ai_detector_scan", result["text"], result, file_path, file_name)
+        conversation_id = _persist_scan(
+            user["user_id"], "ai_detector_scan", result["text"], result, file_path, file_name
+        )
 
-    return {"pages_exact": pages_exact, **result}
+    return {"pages_exact": pages_exact, "conversation_id": conversation_id, **result}
 
 
 @router.get("/ai-detector/history")
 async def ai_detector_history(user: dict = Depends(get_current_user)) -> list[dict]:
-    return list_conversations(user["user_id"], "ai_detector_scan")
+    return _list_scan_history(user["user_id"], "ai_detector_scan", "ai_score")
 
 
 @router.get("/ai-detector/history/{conversation_id}")
@@ -177,6 +233,14 @@ async def ai_detector_history_detail(
     if not conversation:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Introuvable.")
     return _attach_file_url(conversation)
+
+
+@router.post("/ai-detector/feedback")
+async def ai_detector_feedback(
+    body: ScanFeedbackRequest, user: dict = Depends(get_current_user)
+) -> dict:
+    _save_feedback(user["user_id"], body.conversation_id, body.helpful)
+    return {"ok": True}
 
 
 @router.post("/ai-detector/rewrite")
@@ -235,16 +299,19 @@ async def plagiarism_scan(
 
     # Seuls les scans de FICHIER vont dans l'historique - le texte colle est ephemere
     # par design (voir mode "texte" cote frontend, jamais persiste).
+    conversation_id = None
     if file_bytes is not None and file_name is not None:
         file_path = _store_uploaded_file(user["user_id"], file_bytes, file_name, content_type)
-        _persist_scan(user["user_id"], "plagiarism_scan", input_text, result, file_path, file_name)
+        conversation_id = _persist_scan(
+            user["user_id"], "plagiarism_scan", input_text, result, file_path, file_name
+        )
 
-    return {"text": input_text, **result}
+    return {"conversation_id": conversation_id, "text": input_text, **result}
 
 
 @router.get("/plagiarism/history")
 async def plagiarism_history(user: dict = Depends(get_current_user)) -> list[dict]:
-    return list_conversations(user["user_id"], "plagiarism_scan")
+    return _list_scan_history(user["user_id"], "plagiarism_scan", "similarity_score")
 
 
 @router.get("/plagiarism/history/{conversation_id}")
@@ -255,6 +322,14 @@ async def plagiarism_history_detail(
     if not conversation:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Introuvable.")
     return _attach_file_url(conversation)
+
+
+@router.post("/plagiarism/feedback")
+async def plagiarism_feedback(
+    body: ScanFeedbackRequest, user: dict = Depends(get_current_user)
+) -> dict:
+    _save_feedback(user["user_id"], body.conversation_id, body.helpful)
+    return {"ok": True}
 
 
 @router.post("/plagiarism/correct")

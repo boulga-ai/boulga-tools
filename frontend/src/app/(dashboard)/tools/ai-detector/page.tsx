@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { ScanSearch, Loader2, Square, Clock, Upload, FileText, Plus } from "lucide-react";
+import { ScanSearch, Loader2, Square, Clock, Plus, Download } from "lucide-react";
 import { ToolLayout } from "@/components/tools/ToolLayout";
 import { DropZone } from "@/components/tools/DropZone";
 import { StreamingOutput } from "@/components/tools/StreamingOutput";
@@ -10,6 +10,9 @@ import { ScoreGauge } from "@/components/tools/ScoreGauge";
 import { HighlightedText } from "@/components/tools/HighlightedText";
 import { UploadedDocViewer } from "@/components/tools/UploadedDocViewer";
 import { PageScoreList } from "@/components/tools/PageScoreList";
+import { HistoryList, type HistoryItem } from "@/components/tools/HistoryList";
+import { FeedbackButtons } from "@/components/tools/FeedbackButtons";
+import { ModeToggle } from "@/components/tools/ModeToggle";
 import { CopyButton } from "@/components/tools/CopyButton";
 import { GenerationError } from "@/components/tools/GenerationError";
 import { RichTextEditor } from "@/components/tools/RichTextEditor";
@@ -24,6 +27,8 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useStreaming } from "@/hooks/useStreaming";
 import { apiFetch } from "@/lib/api";
+import { confidenceSentence } from "@/lib/confidence";
+import { downloadTextReport } from "@/lib/export";
 
 const TONES = [
   { value: "convivial", label: "Convivial" },
@@ -63,10 +68,14 @@ type ScanResult = {
   pages_analyzed: number;
   total_pages: number;
   pages_exact: boolean;
+  conversation_id: string | null;
 };
 
-type HistoryItem = { id: string; title: string; created_at: string };
 type Mode = "text" | "file";
+
+function countWords(text: string): number {
+  return text.trim() ? text.trim().split(/\s+/).length : 0;
+}
 
 export default function AiDetectorPage() {
   const { profile } = useAuth();
@@ -75,6 +84,7 @@ export default function AiDetectorPage() {
   const [file, setFile] = useState<File | null>(null);
   const [scanning, setScanning] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
+  const [editingText, setEditingText] = useState(true);
   // Fichier reellement analyse par le dernier scan reussi — distinct de `file` (la
   // selection courante), qui peut changer avant qu'on relance une analyse (cf.
   // indicateur "texte modifie"). Evite d'afficher le rendu natif d'un fichier qui ne
@@ -104,6 +114,7 @@ export default function AiDetectorPage() {
     setText("");
     setFile(null);
     setResult(null);
+    setEditingText(true);
     setScannedFile(null);
     setLastScanKey(null);
   }
@@ -125,7 +136,7 @@ export default function AiDetectorPage() {
       setMode("file");
       setText("");
       setFile(null);
-      setResult({ text: "", ...scanResult });
+      setResult({ text: "", conversation_id: conversation.id, ...scanResult });
 
       if (fileUrl && fileName) {
         try {
@@ -149,6 +160,9 @@ export default function AiDetectorPage() {
     return mode === "file" && file ? `file:${file.name}:${file.size}` : `text:${text}`;
   }
   const isStale = result !== null && lastScanKey !== null && computeScanKey() !== lastScanKey;
+  // Mode texte : un seul affichage a la fois — editeur tant qu'il n'y a pas de resultat
+  // frais, texte surligne en lecture seule sinon (jamais les deux empiles).
+  const showTextEditor = mode === "text" && (editingText || !result || isStale);
 
   async function handleScan() {
     if (mode === "text" ? !text.trim() : !file) return;
@@ -170,12 +184,30 @@ export default function AiDetectorPage() {
       setLastScanKey(computeScanKey());
       setScannedFile(mode === "file" ? file : null);
       setResult(await res.json());
+      setEditingText(false);
       if (mode === "file") refreshHistory();
     } catch (err) {
       toast.error("Analyse impossible", { description: (err as Error).message });
     } finally {
       setScanning(false);
     }
+  }
+
+  function handleExport() {
+    if (!result) return;
+    const lines = [
+      "Détecteur de contenu IA — Boulga AI",
+      `Score IA : ${result.ai_score}% — Mixte : ${result.mixed_score}% — Humain : ${result.human_score}%`,
+      "",
+      "Passages signalés :",
+      ...(result.flagged_spans.length === 0
+        ? ["(aucun)"]
+        : result.flagged_spans.map((s) => `- "${result.text.slice(s.start, s.end)}"`)),
+      "",
+      "Texte analysé :",
+      result.text,
+    ];
+    downloadTextReport("detecteur-ia-boulga.txt", lines);
   }
 
   async function handleRewrite() {
@@ -193,35 +225,32 @@ export default function AiDetectorPage() {
         </span>
       }
     >
-      <div className="grid flex-1 grid-cols-1 gap-4 lg:grid-cols-[180px_1fr]">
+      <div className="grid flex-1 grid-cols-1 gap-4 lg:grid-cols-[200px_1fr]">
         <div className="order-2 flex flex-col gap-2 lg:order-1">
           <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
             <Clock className="size-3.5" />
             Historique
           </p>
           <p className="text-xs text-muted-foreground">Fichiers analysés uniquement.</p>
-          <div className="flex flex-col gap-1">
-            {history.length === 0 && (
-              <p className="text-sm text-muted-foreground">Aucun fichier analysé pour le moment.</p>
-            )}
-            {history.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => openHistoryItem(item.id)}
-                className="truncate rounded-[8px] px-2 py-1.5 text-left text-sm hover:bg-accent"
-              >
-                {item.title || "Sans titre"}
-              </button>
-            ))}
-          </div>
+          <HistoryList
+            items={history}
+            onSelect={openHistoryItem}
+            emptyLabel="Aucun fichier analysé pour le moment."
+            scoreLabel="IA"
+          />
         </div>
 
         <div className="order-1 flex flex-col gap-6 lg:order-2">
           <div className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs text-muted-foreground">
-                {mode === "text" ? "Texte collé — non conservé" : "Fichier — conservé dans l'historique"}
-              </p>
+              <ModeToggle
+                mode={mode}
+                onChange={(m) => {
+                  setMode(m);
+                  setFile(null);
+                  setEditingText(true);
+                }}
+              />
               {(text.trim() || file || result) && (
                 <button
                   type="button"
@@ -235,45 +264,57 @@ export default function AiDetectorPage() {
             </div>
 
             {mode === "text" ? (
-              <>
-                <RichTextEditor
-                  value={text}
-                  onChange={setText}
-                  placeholder="Collez le texte à analyser..."
-                  className="min-h-32"
-                />
-                <button
-                  type="button"
-                  onClick={() => setMode("file")}
-                  className="flex w-fit items-center gap-1.5 text-xs font-medium text-bleu-boulga hover:underline"
-                >
-                  <Upload className="size-3.5" />
-                  Importer un fichier à la place
-                </button>
-
-                {!text.trim() && (
+              showTextEditor ? (
+                <>
+                  <RichTextEditor
+                    value={text}
+                    onChange={setText}
+                    placeholder="Collez le texte à analyser..."
+                    className="min-h-32"
+                  />
+                  {!text.trim() && (
+                    <div className="flex flex-col gap-1.5">
+                      <p className="text-xs text-muted-foreground">Ou testez avec un exemple :</p>
+                      <div className="flex flex-wrap gap-2">
+                        {EXAMPLES.map((ex) => (
+                          <button
+                            key={ex.label}
+                            type="button"
+                            onClick={() => setText(ex.text)}
+                            className="rounded-[4px] border px-2.5 py-1 text-xs text-muted-foreground hover:border-bleu-boulga hover:text-bleu-boulga"
+                          >
+                            {ex.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                result && (
                   <div className="flex flex-col gap-1.5">
-                    <p className="text-xs text-muted-foreground">Ou testez avec un exemple :</p>
-                    <div className="flex flex-wrap gap-2">
-                      {EXAMPLES.map((ex) => (
-                        <button
-                          key={ex.label}
-                          type="button"
-                          onClick={() => setText(ex.text)}
-                          className="rounded-[4px] border px-2.5 py-1 text-xs text-muted-foreground hover:border-bleu-boulga hover:text-bleu-boulga"
-                        >
-                          {ex.label}
-                        </button>
-                      ))}
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-medium uppercase text-muted-foreground">
+                        Texte analysé
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setEditingText(true)}
+                        className="text-xs font-medium text-bleu-boulga hover:underline"
+                      >
+                        Modifier
+                      </button>
+                    </div>
+                    <div className="min-h-32 rounded-lg border p-2.5 text-sm">
+                      <HighlightedText text={result.text} spans={result.flagged_spans} />
                     </div>
                   </div>
-                )}
-              </>
+                )
+              )
             ) : (
               <>
                 {file ? (
                   <div className="flex items-center gap-2 rounded-[8px] border bg-card p-3 text-sm">
-                    <FileText className="size-4 text-muted-foreground" />
                     <span className="flex-1 truncate">{file.name}</span>
                     <button
                       type="button"
@@ -290,34 +331,17 @@ export default function AiDetectorPage() {
                     label="Glissez-déposez un PDF, DOCX ou TXT, ou"
                   />
                 )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMode("text");
-                    setFile(null);
-                  }}
-                  className="flex w-fit items-center gap-1.5 text-xs font-medium text-bleu-boulga hover:underline"
-                >
-                  Coller du texte à la place
-                </button>
               </>
             )}
 
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                onClick={handleScan}
-                disabled={scanning || (mode === "text" ? !text.trim() : !file)}
-                className="w-fit"
-              >
-                {scanning ? <Loader2 className="size-4 animate-spin" /> : <ScanSearch className="size-4" />}
-                {scanning ? "Analyse en cours..." : "Analyser"}
-              </Button>
-              {result && !scanning && (
-                <span className={isStale ? "text-xs font-medium text-attention" : "text-xs text-muted-foreground"}>
-                  {isStale ? "Contenu modifié — relancez l'analyse pour un résultat à jour" : "Résultat à jour"}
-                </span>
-              )}
-            </div>
+            <Button
+              onClick={handleScan}
+              disabled={scanning || (mode === "text" ? !text.trim() : !file)}
+              className="w-fit"
+            >
+              {scanning ? <Loader2 className="size-4 animate-spin" /> : <ScanSearch className="size-4" />}
+              {scanning ? "Analyse en cours..." : "Analyser"}
+            </Button>
           </div>
 
           {result && (
@@ -328,6 +352,9 @@ export default function AiDetectorPage() {
                   <UploadedDocViewer file={scannedFile} text={result.text} spans={result.flagged_spans} />
 
                   <div className="flex flex-col gap-4">
+                    <p className="text-sm text-muted-foreground">
+                      {confidenceSentence(result.ai_score, "ce texte a été généré par IA")}
+                    </p>
                     <ScoreGauge
                       aiScore={result.ai_score}
                       mixedScore={result.mixed_score}
@@ -345,16 +372,45 @@ export default function AiDetectorPage() {
                 </div>
               ) : (
                 <div className="flex flex-col gap-4">
+                  <p className="text-sm text-muted-foreground">
+                    {confidenceSentence(result.ai_score, "ce texte a été généré par IA")}
+                  </p>
                   <ScoreGauge
                     aiScore={result.ai_score}
                     mixedScore={result.mixed_score}
                     humanScore={result.human_score}
                   />
-                  <div className="rounded-[12px] border bg-card p-4 text-sm">
-                    <HighlightedText text={result.text} spans={result.flagged_spans} />
-                  </div>
                 </div>
               )}
+
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
+                <div className="flex items-center gap-3">
+                  {mode === "file" && result.conversation_id && (
+                    <FeedbackButtons
+                      endpoint="/api/v1/tools/analyzers/ai-detector/feedback"
+                      conversationId={result.conversation_id}
+                    />
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleExport}
+                    className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-bleu-boulga"
+                  >
+                    <Download className="size-3.5" />
+                    Exporter
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className={isStale ? "font-medium text-attention" : undefined}>
+                    {isStale ? "Contenu modifié — relancez l'analyse" : "Résultat à jour"}
+                  </span>
+                  <span>·</span>
+                  <span>
+                    {result.text.length.toLocaleString("fr-FR")} caractères •{" "}
+                    {countWords(result.text).toLocaleString("fr-FR")} mots
+                  </span>
+                </div>
+              </div>
 
               <div className="flex flex-col gap-3 border-t pt-4">
                 <div className="flex flex-wrap items-center gap-3">

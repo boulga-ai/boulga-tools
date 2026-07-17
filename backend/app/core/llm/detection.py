@@ -18,8 +18,8 @@ MAX_DETECTION_CHARS = 12_000
 # que le routing des modeles (TIER_GROUPS). Un seul appel LLM couvre toutes les pages
 # retenues (pas un appel par page, qui multiplierait le cout par la longueur du doc).
 PAGE_LIMITS = {
-    "introduction": 3,
-    "goutte_source": 10,
+    "introduction": 5,
+    "goutte_source": 15,
     "fleuve_ocean": 40,
 }
 # Filet de securite cout meme sur peu de pages tres denses.
@@ -68,16 +68,51 @@ def _build_flexible_pattern(quote: str) -> re.Pattern[str] | None:
         return None
 
 
+# Tailles de fenetre essayees en repli, dans l'ordre (la plus specifique d'abord). Une
+# seule mauvaise fenetre de 5 mots peut etre "empoisonnee" par un mot divergent au
+# centre d'une courte citation (chaque fenetre de 5 mots la contient alors forcement) -
+# retenter avec des fenetres plus petites augmente les chances de contourner le mot
+# divergent, au prix d'un surlignage moins specifique.
+_PARTIAL_MATCH_WINDOW_SIZES = (5, 3)
+
+
+def _search_windows(text: str, words: list[str], window_size: int) -> tuple[int, int] | None:
+    if len(words) <= window_size:
+        return None
+    for i in range(len(words) - window_size + 1):
+        window_pattern = _build_flexible_pattern(" ".join(words[i : i + window_size]))
+        if window_pattern is None:
+            continue
+        match = window_pattern.search(text)
+        if match is not None:
+            return match.start(), match.end()
+    return None
+
+
 def _locate_span(text: str, quote: object) -> tuple[int, int] | None:
+    """Cherche la citation complete d'abord ; si le LLM l'a legerement paraphrasee (un
+    mot en plus/different quelque part dans la citation) et que le motif complet
+    echoue, balaie des fenetres de mots glissant sur toute la citation, en retrecissant
+    progressivement (voir _PARTIAL_MATCH_WINDOW_SIZES) — un surlignage partiel vaut
+    mieux qu'aucun surlignage. Ne renvoie jamais de position inventee : chaque repli
+    reste une recherche reelle dans le texte fourni."""
     if not isinstance(quote, str) or not quote.strip():
         return None
-    pattern = _build_flexible_pattern(quote.strip())
-    if pattern is None:
-        return None
-    match = pattern.search(text)
-    if match is None:
-        return None
-    return match.start(), match.end()
+    quote = quote.strip()
+
+    pattern = _build_flexible_pattern(quote)
+    if pattern is not None:
+        match = pattern.search(text)
+        if match is not None:
+            return match.start(), match.end()
+
+    words = quote.split()
+    for window_size in _PARTIAL_MATCH_WINDOW_SIZES:
+        span = _search_windows(text, words, window_size)
+        if span is not None:
+            return span
+
+    return None
 
 
 def _select_pages(pages: list[str], tier: str) -> list[str]:

@@ -14,7 +14,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url,
 ).toString();
 
-const CONTAINER_PADDING = 24; // p-3 des deux cotes (12px + 12px)
+const CONTAINER_PADDING = 12; // p-1.5 des deux cotes (6px + 6px)
 const DEFAULT_PAGE_WIDTH = 640;
 
 // Composant importe uniquement via next/dynamic({ ssr: false }) par les pages
@@ -63,7 +63,7 @@ export function PdfViewer({ file, highlights }: { file: File; highlights: string
   return (
     <div
       ref={containerRef}
-      className="flex max-h-[720px] w-full flex-col items-center gap-3 overflow-y-auto rounded-[12px] border bg-muted/30 p-3"
+      className="flex max-h-[720px] w-full flex-col items-center gap-2 overflow-y-auto rounded-[12px] bg-muted/20 p-1.5"
     >
       <Document
         file={file}
@@ -75,8 +75,8 @@ export function PdfViewer({ file, highlights }: { file: File; highlights: string
         }
       >
         {Array.from({ length: numPages }, (_, i) => (
-          <div key={i} className="flex flex-col items-center gap-1">
-            <p className="text-xs text-muted-foreground">Page {i + 1}</p>
+          <div key={i} className="flex flex-col items-center gap-0.5">
+            <p className="text-[11px] text-muted-foreground">Page {i + 1}</p>
             <Page
               pageNumber={i + 1}
               onRenderTextLayerSuccess={reapplyHighlights}

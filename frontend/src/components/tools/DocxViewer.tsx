@@ -46,7 +46,7 @@ export function DocxViewer({ file, highlights }: { file: File; highlights: strin
   }, [highlights]);
 
   return (
-    <div className="max-h-[600px] overflow-auto rounded-[12px] border bg-muted/30 p-2">
+    <div className="max-h-[600px] overflow-auto rounded-[12px] bg-muted/20 p-1">
       {loading && (
         <div className="flex items-center justify-center p-8">
           <Loader2 className="size-5 animate-spin text-muted-foreground" />

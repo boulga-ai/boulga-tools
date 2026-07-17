@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Shield, Loader2, ExternalLink, Square, Clock, Upload, FileText, Plus } from "lucide-react";
+import { Shield, Loader2, ExternalLink, Square, Clock, Plus, Download } from "lucide-react";
 import { ToolLayout } from "@/components/tools/ToolLayout";
 import { DropZone } from "@/components/tools/DropZone";
 import { CopyButton } from "@/components/tools/CopyButton";
@@ -10,6 +10,10 @@ import { GenerationError } from "@/components/tools/GenerationError";
 import { MarkdownContent } from "@/components/tools/MarkdownContent";
 import { RichTextEditor } from "@/components/tools/RichTextEditor";
 import { UploadedDocViewer } from "@/components/tools/UploadedDocViewer";
+import { HighlightedText } from "@/components/tools/HighlightedText";
+import { HistoryList, type HistoryItem } from "@/components/tools/HistoryList";
+import { FeedbackButtons } from "@/components/tools/FeedbackButtons";
+import { ModeToggle } from "@/components/tools/ModeToggle";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -21,6 +25,8 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useStreaming } from "@/hooks/useStreaming";
 import { apiFetch } from "@/lib/api";
+import { confidenceSentence } from "@/lib/confidence";
+import { downloadTextReport } from "@/lib/export";
 
 const TONES = [
   { value: "convivial", label: "Convivial" },
@@ -60,10 +66,14 @@ type ScanResult = {
   similarity_score: number;
   flagged_spans: FlaggedSpan[];
   sample_word_count: number;
+  conversation_id: string | null;
 };
 
-type HistoryItem = { id: string; title: string; created_at: string };
 type Mode = "text" | "file";
+
+function countWords(text: string): number {
+  return text.trim() ? text.trim().split(/\s+/).length : 0;
+}
 
 export default function PlagiarismPage() {
   const { profile } = useAuth();
@@ -72,6 +82,7 @@ export default function PlagiarismPage() {
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
+  const [editingText, setEditingText] = useState(true);
   // Fichier reellement analyse par le dernier scan reussi — distinct de `file` (la
   // selection courante), voir ai-detector/page.tsx pour le meme pattern.
   const [scannedFile, setScannedFile] = useState<File | null>(null);
@@ -99,6 +110,7 @@ export default function PlagiarismPage() {
     setText("");
     setFile(null);
     setResult(null);
+    setEditingText(true);
     setScannedFile(null);
     setLastScanKey(null);
   }
@@ -120,7 +132,7 @@ export default function PlagiarismPage() {
       setMode("file");
       setText("");
       setFile(null);
-      setResult({ text: "", ...scanResult });
+      setResult({ text: "", conversation_id: conversation.id, ...scanResult });
 
       if (fileUrl && fileName) {
         try {
@@ -144,6 +156,9 @@ export default function PlagiarismPage() {
     return mode === "file" && file ? `file:${file.name}:${file.size}` : `text:${text}`;
   }
   const isStale = result !== null && lastScanKey !== null && computeScanKey() !== lastScanKey;
+  // Mode texte : un seul affichage a la fois — editeur tant qu'il n'y a pas de resultat
+  // frais, texte surligne en lecture seule sinon (jamais les deux empiles).
+  const showTextEditor = mode === "text" && (editingText || !result || isStale);
 
   async function handleScan() {
     if (mode === "text" ? !text.trim() : !file) return;
@@ -165,12 +180,30 @@ export default function PlagiarismPage() {
       setLastScanKey(computeScanKey());
       setScannedFile(mode === "file" ? file : null);
       setResult(await res.json());
+      setEditingText(false);
       if (mode === "file") refreshHistory();
     } catch (err) {
       toast.error("Vérification impossible", { description: (err as Error).message });
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function handleExport() {
+    if (!result) return;
+    const lines = [
+      "Vérificateur de plagiat — Boulga AI",
+      `Score de similarité : ${result.similarity_score}%`,
+      "",
+      "Passages signalés :",
+      ...(result.flagged_spans.length === 0
+        ? ["(aucun)"]
+        : result.flagged_spans.map((s) => `- "${s.text}" (${s.similarity}% — ${s.source_url})`)),
+      "",
+      "Texte analysé :",
+      result.text,
+    ];
+    downloadTextReport("verificateur-plagiat-boulga.txt", lines);
   }
 
   async function handleCorrect() {
@@ -192,35 +225,32 @@ export default function PlagiarismPage() {
         </span>
       }
     >
-      <div className="grid flex-1 grid-cols-1 gap-4 lg:grid-cols-[180px_1fr]">
+      <div className="grid flex-1 grid-cols-1 gap-4 lg:grid-cols-[200px_1fr]">
         <div className="order-2 flex flex-col gap-2 lg:order-1">
           <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
             <Clock className="size-3.5" />
             Historique
           </p>
           <p className="text-xs text-muted-foreground">Fichiers vérifiés uniquement.</p>
-          <div className="flex flex-col gap-1">
-            {history.length === 0 && (
-              <p className="text-sm text-muted-foreground">Aucun fichier vérifié pour le moment.</p>
-            )}
-            {history.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => openHistoryItem(item.id)}
-                className="truncate rounded-[8px] px-2 py-1.5 text-left text-sm hover:bg-accent"
-              >
-                {item.title || "Sans titre"}
-              </button>
-            ))}
-          </div>
+          <HistoryList
+            items={history}
+            onSelect={openHistoryItem}
+            emptyLabel="Aucun fichier vérifié pour le moment."
+            scoreLabel="Plagiat"
+          />
         </div>
 
         <div className="order-1 flex flex-col gap-6 lg:order-2">
           <div className="flex flex-col gap-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs text-muted-foreground">
-                {mode === "text" ? "Texte collé — non conservé" : "Fichier — conservé dans l'historique"}
-              </p>
+              <ModeToggle
+                mode={mode}
+                onChange={(m) => {
+                  setMode(m);
+                  setFile(null);
+                  setEditingText(true);
+                }}
+              />
               {(text.trim() || file || result) && (
                 <button
                   type="button"
@@ -234,45 +264,57 @@ export default function PlagiarismPage() {
             </div>
 
             {mode === "text" ? (
-              <>
-                <RichTextEditor
-                  value={text}
-                  onChange={setText}
-                  placeholder="Collez le texte à vérifier..."
-                  className="min-h-32"
-                />
-                <button
-                  type="button"
-                  onClick={() => setMode("file")}
-                  className="flex w-fit items-center gap-1.5 text-xs font-medium text-bleu-boulga hover:underline"
-                >
-                  <Upload className="size-3.5" />
-                  Importer un fichier à la place
-                </button>
-
-                {!text.trim() && (
+              showTextEditor ? (
+                <>
+                  <RichTextEditor
+                    value={text}
+                    onChange={setText}
+                    placeholder="Collez le texte à vérifier..."
+                    className="min-h-32"
+                  />
+                  {!text.trim() && (
+                    <div className="flex flex-col gap-1.5">
+                      <p className="text-xs text-muted-foreground">Ou testez avec un exemple :</p>
+                      <div className="flex flex-wrap gap-2">
+                        {EXAMPLES.map((ex) => (
+                          <button
+                            key={ex.label}
+                            type="button"
+                            onClick={() => setText(ex.text)}
+                            className="rounded-[4px] border px-2.5 py-1 text-xs text-muted-foreground hover:border-bleu-boulga hover:text-bleu-boulga"
+                          >
+                            {ex.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                result && (
                   <div className="flex flex-col gap-1.5">
-                    <p className="text-xs text-muted-foreground">Ou testez avec un exemple :</p>
-                    <div className="flex flex-wrap gap-2">
-                      {EXAMPLES.map((ex) => (
-                        <button
-                          key={ex.label}
-                          type="button"
-                          onClick={() => setText(ex.text)}
-                          className="rounded-[4px] border px-2.5 py-1 text-xs text-muted-foreground hover:border-bleu-boulga hover:text-bleu-boulga"
-                        >
-                          {ex.label}
-                        </button>
-                      ))}
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-medium uppercase text-muted-foreground">
+                        Texte vérifié
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setEditingText(true)}
+                        className="text-xs font-medium text-bleu-boulga hover:underline"
+                      >
+                        Modifier
+                      </button>
+                    </div>
+                    <div className="min-h-32 rounded-lg border p-2.5 text-sm">
+                      <HighlightedText text={result.text} spans={result.flagged_spans} />
                     </div>
                   </div>
-                )}
-              </>
+                )
+              )
             ) : (
               <>
                 {file ? (
                   <div className="flex items-center gap-2 rounded-[8px] border bg-card p-3 text-sm">
-                    <FileText className="size-4 text-muted-foreground" />
                     <span className="flex-1 truncate">{file.name}</span>
                     <button
                       type="button"
@@ -289,34 +331,17 @@ export default function PlagiarismPage() {
                     label="Glissez-déposez un PDF, DOCX ou TXT, ou"
                   />
                 )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMode("text");
-                    setFile(null);
-                  }}
-                  className="flex w-fit items-center gap-1.5 text-xs font-medium text-bleu-boulga hover:underline"
-                >
-                  Coller du texte à la place
-                </button>
               </>
             )}
 
-            <div className="flex flex-wrap items-center gap-3">
-              <Button
-                onClick={handleScan}
-                disabled={submitting || (mode === "text" ? !text.trim() : !file)}
-                className="w-fit"
-              >
-                {submitting ? <Loader2 className="size-4 animate-spin" /> : <Shield className="size-4" />}
-                {submitting ? "Analyse en cours..." : "Vérifier le plagiat"}
-              </Button>
-              {result && !submitting && (
-                <span className={isStale ? "text-xs font-medium text-attention" : "text-xs text-muted-foreground"}>
-                  {isStale ? "Contenu modifié — relancez l'analyse pour un résultat à jour" : "Résultat à jour"}
-                </span>
-              )}
-            </div>
+            <Button
+              onClick={handleScan}
+              disabled={submitting || (mode === "text" ? !text.trim() : !file)}
+              className="w-fit"
+            >
+              {submitting ? <Loader2 className="size-4 animate-spin" /> : <Shield className="size-4" />}
+              {submitting ? "Analyse en cours..." : "Vérifier le plagiat"}
+            </Button>
           </div>
 
           {result && (
@@ -337,6 +362,35 @@ export default function PlagiarismPage() {
               ) : (
                 <ResultSummary result={result} />
               )}
+
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
+                <div className="flex items-center gap-3">
+                  {mode === "file" && result.conversation_id && (
+                    <FeedbackButtons
+                      endpoint="/api/v1/tools/analyzers/plagiarism/feedback"
+                      conversationId={result.conversation_id}
+                    />
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleExport}
+                    className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-bleu-boulga"
+                  >
+                    <Download className="size-3.5" />
+                    Exporter
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className={isStale ? "font-medium text-attention" : undefined}>
+                    {isStale ? "Contenu modifié — relancez l'analyse" : "Résultat à jour"}
+                  </span>
+                  <span>·</span>
+                  <span>
+                    {result.text.length.toLocaleString("fr-FR")} caractères •{" "}
+                    {countWords(result.text).toLocaleString("fr-FR")} mots
+                  </span>
+                </div>
+              </div>
 
               {result.flagged_spans.length > 0 && (
                 <div className="flex flex-col gap-3 border-t pt-4">
@@ -408,6 +462,10 @@ function ResultSummary({ result }: { result: ScanResult }) {
         <p className="text-2xl font-semibold text-erreur">{result.similarity_score}%</p>
         <p className="text-sm text-muted-foreground">de contenu potentiellement similaire</p>
       </div>
+
+      <p className="text-sm text-muted-foreground">
+        {confidenceSentence(result.similarity_score, "ce texte contient du contenu plagié")}
+      </p>
 
       <div className="flex flex-col gap-2">
         {result.flagged_spans.length === 0 && (
