@@ -1,7 +1,22 @@
+"use client";
+
+import dynamic from "next/dynamic";
 import { HighlightedText } from "@/components/tools/HighlightedText";
+import { highlightTier } from "@/lib/highlightTier";
+import type { PdfHighlight } from "@/components/tools/PdfViewer";
+
+// pdf.js touche des API navigateur (Worker, DOMMatrix) absentes cote serveur — import
+// dynamique obligatoire, ssr desactive.
+const PdfViewer = dynamic(() => import("@/components/tools/PdfViewer").then((m) => m.PdfViewer), {
+  ssr: false,
+});
 
 type Span = { start: number; end: number; ai_score?: number };
 type PageScore = { page: number; ai_score: number | null; too_short: boolean };
+
+function extOf(name: string): string {
+  return name.split(".").pop()?.toLowerCase() ?? "";
+}
 
 function PagedHighlightedText({
   text,
@@ -70,19 +85,18 @@ function PagedHighlightedText({
 
 // Affiche un fichier uploade avec les passages signales surlignes dessus.
 //
-// Option A (voir PromptAmelioration detection.md, Prompt 2) : le surlignage se fait sur
-// le TEXTE EXTRAIT, jamais sur un rendu visuel du PDF — les flagged_spans sont des
-// offsets dans le texte extrait par pypdf, sans correspondance directe avec les
-// positions visuelles d'un rendu PDF natif (pdf.js). Rendre le texte extrait est fiable
-// a 100% (meme texte, memes offsets) ; un rendu PDF natif avec overlay pdf.js
-// (page.getTextContent() + rectangles positionnes) resterait une amelioration future
-// possible (Option B), non implementee ici.
+// PDF : rendu NATIF (pages visuelles du document original, comme GPTZero) avec
+// surlignage par overlay coordonnees pixel-parfait sur la couche texte pdf.js — voir
+// PdfViewer.tsx. C'est un retour en arriere assume sur le Prompt 2 ("texte extrait page
+// par page"), juge comme un recul visuel par rapport a la reference GPTZero.
 //
-// Quand pageRanges est fourni (detecteur IA sur PDF/DOCX a coupures exactes), le texte
-// est decoupe par page avec un en-tete "Page N / Total" et le score de cette page, comme
-// chez GPTZero. Sans pageRanges (plagiat, texte colle, DOCX sans coupures), un seul bloc
-// continu est affiche.
+// DOCX/TXT/texte colle : pas de rendu natif pagine equivalent pour ces formats
+// (asymetrie deliberee, cf. memoire projet) — restent sur le texte extrait surligne
+// (HighlightedText/PagedHighlightedText). Meme repli si un PDF est affiche sans le
+// fichier reellement disponible (ex. reouverture d'un historique dont le blob n'a pas pu
+// etre re-telecharge) : pas de File, pas de rendu pdf.js possible.
 export function UploadedDocViewer({
+  file,
   text,
   spans,
   pageRanges,
@@ -100,6 +114,22 @@ export function UploadedDocViewer({
   pagesExact?: boolean;
   rewriteConfig?: { canRewrite: boolean };
 }) {
+  if (file && extOf(file.name) === "pdf") {
+    const highlights: PdfHighlight[] = spans
+      .map((s) => {
+        // Sans ai_score (plagiat), chaque span retenu par le backend est deja une
+        // correspondance confirmee : toujours surlignee au maximum, comme avant.
+        const tier = s.ai_score === undefined ? "strong" : highlightTier(s.ai_score);
+        if (tier === null) return null;
+        const quote = text.slice(s.start, s.end).trim();
+        if (!quote) return null;
+        return { quote, tier };
+      })
+      .filter((h): h is PdfHighlight => h !== null);
+
+    return <PdfViewer file={file} highlights={highlights} pageScores={pageScores} />;
+  }
+
   if (pageRanges && pageRanges.length > 0) {
     return (
       <PagedHighlightedText
