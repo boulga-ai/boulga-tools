@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { RotateCcw, Bookmark } from "lucide-react";
+import { RotateCcw, Bookmark, Plus } from "lucide-react";
 import { ToolLayout } from "@/components/tools/ToolLayout";
 import { ChatMessage } from "@/components/tools/ChatMessage";
 import { ChatInput } from "@/components/tools/ChatInput";
@@ -22,6 +22,8 @@ import {
 } from "@/components/ui/select";
 import { useStreaming } from "@/hooks/useStreaming";
 
+const DEFAULT_PLATFORM = "facebook";
+const DEFAULT_TONE = "Convivial";
 const REFINE_PRESETS = ["Plus court", "Plus percutant", "Ajoute des emojis"];
 
 type ChatMsg =
@@ -35,19 +37,26 @@ type ChatMsg =
       description: string;
     };
 
+type LastOutput = { content: string; description: string; platform: string; tone: string };
+
 export default function SocialPostsPage() {
-  const [platform, setPlatform] = useState("facebook");
-  const [tone, setTone] = useState("Convivial");
+  const [platform, setPlatform] = useState(DEFAULT_PLATFORM);
+  const [tone, setTone] = useState(DEFAULT_TONE);
   const [audience, setAudience] = useState("");
   const [keywords, setKeywords] = useState("");
   const [cta, setCta] = useState("");
   const [messages, setMessages] = useState<ChatMsg[]>([]);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [lastOutput, setLastOutput] = useState<LastOutput | null>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
   const { text: output, isStreaming, error, isQuotaError, start, stop } = useStreaming();
 
+  const generationCount = messages.filter((m) => m.role === "assistant").length;
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length]);
+    const el = scrollAreaRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: isStreaming ? "auto" : "smooth" });
+  }, [messages, isStreaming, output]);
 
   function buildPayload(overrides: {
     description: string;
@@ -91,6 +100,12 @@ export default function SocialPostsPage() {
         description: resultDescription,
       },
     ]);
+    setLastOutput({
+      content: accumulated,
+      description: resultDescription,
+      platform: resultPlatform,
+      tone: resultTone,
+    });
   }
 
   async function handleSend(userText: string) {
@@ -98,35 +113,41 @@ export default function SocialPostsPage() {
       ...prev,
       { id: crypto.randomUUID(), role: "user", content: userText },
     ]);
-    await generate(buildPayload({ description: userText, platform, tone }), platform, tone, userText);
-  }
-
-  function lastAssistantMessage() {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i];
-      if (m.role === "assistant") return m;
+    if (lastOutput) {
+      await generate(
+        buildPayload({
+          description: lastOutput.description,
+          platform,
+          tone,
+          previousOutput: lastOutput.content,
+          refineInstruction: userText,
+        }),
+        platform,
+        tone,
+        lastOutput.description,
+      );
+    } else {
+      await generate(buildPayload({ description: userText, platform, tone }), platform, tone, userText);
     }
-    return null;
   }
 
-  async function handleRefine(instruction: string) {
-    const last = lastAssistantMessage();
-    if (!last) return;
+  async function handleRefinePreset(instruction: string) {
+    if (!lastOutput) return;
     setMessages((prev) => [
       ...prev,
       { id: crypto.randomUUID(), role: "user", content: instruction },
     ]);
     await generate(
       buildPayload({
-        description: last.description,
-        platform: last.platform,
-        tone: last.tone,
-        previousOutput: last.content,
+        description: lastOutput.description,
+        platform,
+        tone,
+        previousOutput: lastOutput.content,
         refineInstruction: instruction,
       }),
-      last.platform,
-      last.tone,
-      last.description,
+      platform,
+      tone,
+      lastOutput.description,
     );
   }
 
@@ -148,7 +169,14 @@ export default function SocialPostsPage() {
     );
   }
 
-  const lastAssistantId = lastAssistantMessage()?.id;
+  function handleNewConversation() {
+    setMessages([]);
+    setLastOutput(null);
+    setPlatform(DEFAULT_PLATFORM);
+    setTone(DEFAULT_TONE);
+  }
+
+  const lastAssistantId = [...messages].reverse().find((m) => m.role === "assistant")?.id;
 
   return (
     <ToolLayout
@@ -162,12 +190,33 @@ export default function SocialPostsPage() {
     >
       <div className="flex flex-1 flex-col rounded-[12px] border bg-card">
         <div className="flex flex-col gap-2.5 border-b p-3.5">
-          <h2>Posts réseaux sociaux</h2>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <h2>Posts réseaux sociaux</h2>
+              {messages.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleNewConversation}
+                  className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-bleu-boulga"
+                  title="Nouvelle conversation"
+                >
+                  <Plus className="size-3.5" />
+                  Nouvelle conversation
+                </button>
+              )}
+            </div>
+            {generationCount > 0 && (
+              <span className="text-xs text-muted-foreground">
+                {generationCount} post{generationCount > 1 ? "s" : ""} généré
+                {generationCount > 1 ? "s" : ""}
+              </span>
+            )}
+          </div>
           <PlatformChips value={platform} onChange={setPlatform} disabled={isStreaming} />
           <ToneChips value={tone} onChange={setTone} disabled={isStreaming} />
         </div>
 
-        <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
+        <div ref={scrollAreaRef} className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
           {messages.length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-1 text-center text-sm text-muted-foreground">
               Décrivez ce que vous voulez publier, l&apos;IA génère un post adapté à la
@@ -228,7 +277,7 @@ export default function SocialPostsPage() {
                         <button
                           key={preset}
                           type="button"
-                          onClick={() => handleRefine(preset)}
+                          onClick={() => handleRefinePreset(preset)}
                           className="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-200"
                         >
                           {preset}
@@ -246,7 +295,6 @@ export default function SocialPostsPage() {
             </ChatMessage>
           )}
           {error && <GenerationError message={error} isQuotaError={isQuotaError} />}
-          <div ref={messagesEndRef} />
         </div>
 
         <ChatInput
