@@ -54,6 +54,14 @@ DEFAULT_ROUTING: dict[str, dict[str, list[str] | None]] = {
         "goutte_source": ["x-ai/grok-4.3"],
         "fleuve_ocean": ["anthropic/claude-sonnet-4.6"],
     },
+    # Reecriture d'un seul passage signale (clic inline, voir Prompt 6) — partagee entre
+    # le detecteur IA et le verificateur de plagiat, meme disponibilite que les
+    # reecritures/corrections completes (indisponible en introduction).
+    "passage_rewrite": {
+        "introduction": None,
+        "goutte_source": ["x-ai/grok-4.3"],
+        "fleuve_ocean": ["anthropic/claude-sonnet-4.6"],
+    },
     # Detection (scan) IA + plagiat — solution LLM interimaire en attendant l'integration
     # Originality.ai (voir app/core/llm/detection.py). Disponible a tous les paliers y
     # compris introduction : c'est le quota "scans" (pas le routing) qui limite l'usage

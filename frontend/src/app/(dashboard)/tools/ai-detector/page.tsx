@@ -394,7 +394,11 @@ export default function AiDetectorPage() {
                       id="doc-page-1"
                       className="flex-1 overflow-y-auto rounded-lg border p-2.5 text-sm"
                     >
-                      <HighlightedText text={result.text} spans={result.flagged_spans} />
+                      <HighlightedText
+                        text={result.text}
+                        spans={result.flagged_spans}
+                        rewriteConfig={{ canRewrite }}
+                      />
                     </div>
                   </div>
                 )
@@ -423,6 +427,7 @@ export default function AiDetectorPage() {
                 pageScores={result.page_scores}
                 totalPages={result.total_pages}
                 pagesExact={result.pages_exact}
+                rewriteConfig={{ canRewrite }}
               />
             )}
           </div>

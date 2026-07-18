@@ -1,3 +1,5 @@
+# backend/app/api/v1/tools/analyzers.py
+
 import json
 import uuid
 
@@ -9,6 +11,7 @@ from app.core.conversations import get_conversation, save_conversation
 from app.core.llm.client import OpenRouterError, compute_cost
 from app.db.supabase import get_service_client
 from app.core.llm.detection import detect_ai_content, detect_plagiarism
+from app.core.llm.prompts import passage_rewrite as passage_rewrite_prompts
 from app.core.llm.prompts import plagiarism as plagiarism_prompts
 from app.core.llm.prompts.ai_rewrite import build_system_prompt
 from app.core.llm.router import ModelNotAvailableError, resolve_model
@@ -16,7 +19,12 @@ from app.core.quota import consume_scan
 from app.core.rate_limit import rate_limit_dep
 from app.core.usage import log_usage
 from app.dependencies import check_quota_dep, get_current_user
-from app.models.analyzers import AiRewriteRequest, PlagiarismCorrectRequest, ScanFeedbackRequest
+from app.models.analyzers import (
+    AiRewriteRequest,
+    PassageRewriteRequest,
+    PlagiarismCorrectRequest,
+    ScanFeedbackRequest,
+)
 from app.utils.storage import create_signed_url, upload_file
 from app.utils.text_extraction import ExtractionError, extract_pages
 
@@ -262,6 +270,38 @@ async def ai_detector_rewrite(
 
     return EventSourceResponse(
         _run_stream_tool(tool="ai_detector_rewrite", user=user, model=model, messages=messages),
+        sep="\n",
+    )
+
+
+@router.post("/rewrite-passage")
+async def rewrite_passage(
+    body: PassageRewriteRequest,
+    user: dict = Depends(check_quota_dep("words")),
+):
+    """Reecrit UN SEUL passage signale (pas tout le document) avec son contexte immediat
+    pour rester coherent — endpoint partage entre le detecteur IA et le verificateur de
+    plagiat (voir Prompt 6, PromptAmelioration detection.md) : le clic inline sur un
+    passage surligne dans l'un ou l'autre outil appelle la meme route."""
+    tier = user["tier"]
+
+    try:
+        model = resolve_model("passage_rewrite", tier)
+    except ModelNotAvailableError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+
+    messages = [
+        {"role": "system", "content": passage_rewrite_prompts.build_system_prompt(body.tone)},
+        {
+            "role": "user",
+            "content": passage_rewrite_prompts.build_user_message(
+                body.passage, body.context_before, body.context_after
+            ),
+        },
+    ]
+
+    return EventSourceResponse(
+        _run_stream_tool(tool="passage_rewrite", user=user, model=model, messages=messages),
         sep="\n",
     )
 

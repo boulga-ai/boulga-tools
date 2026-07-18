@@ -10,6 +10,7 @@ function PagedHighlightedText({
   pageScores,
   totalPages,
   label,
+  rewriteConfig,
 }: {
   text: string;
   spans: Span[];
@@ -17,6 +18,7 @@ function PagedHighlightedText({
   pageScores: PageScore[];
   totalPages: number;
   label: string;
+  rewriteConfig?: { canRewrite: boolean };
 }) {
   return (
     <div className="flex max-h-[720px] flex-col gap-4 overflow-y-auto rounded-[12px] border bg-card p-4">
@@ -52,7 +54,11 @@ function PagedHighlightedText({
               </p>
             ) : (
               <div className="rounded-lg border p-3 text-sm">
-                <HighlightedText text={text.slice(start, end)} spans={pageSpans} />
+                <HighlightedText
+                  text={text.slice(start, end)}
+                  spans={pageSpans}
+                  rewriteConfig={rewriteConfig}
+                />
               </div>
             )}
           </div>
@@ -83,6 +89,7 @@ export function UploadedDocViewer({
   pageScores,
   totalPages,
   pagesExact = true,
+  rewriteConfig,
 }: {
   file: File | null;
   text: string;
@@ -91,6 +98,7 @@ export function UploadedDocViewer({
   pageScores?: PageScore[];
   totalPages?: number;
   pagesExact?: boolean;
+  rewriteConfig?: { canRewrite: boolean };
 }) {
   if (pageRanges && pageRanges.length > 0) {
     return (
@@ -101,6 +109,7 @@ export function UploadedDocViewer({
         pageScores={pageScores ?? []}
         totalPages={totalPages ?? pageRanges.length}
         label={pagesExact ? "Page" : "Section"}
+        rewriteConfig={rewriteConfig}
       />
     );
   }
@@ -110,7 +119,7 @@ export function UploadedDocViewer({
       id="doc-page-1"
       className="max-h-[720px] overflow-y-auto rounded-[12px] border bg-card p-4 text-sm"
     >
-      <HighlightedText text={text} spans={spans} />
+      <HighlightedText text={text} spans={spans} rewriteConfig={rewriteConfig} />
     </div>
   );
 }

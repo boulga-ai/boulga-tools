@@ -359,7 +359,11 @@ export default function PlagiarismPage() {
                       </button>
                     </div>
                     <div className="flex-1 overflow-y-auto rounded-lg border p-2.5 text-sm">
-                      <HighlightedText text={result.text} spans={result.flagged_spans} />
+                      <HighlightedText
+                        text={result.text}
+                        spans={result.flagged_spans}
+                        rewriteConfig={{ canRewrite: canCorrect }}
+                      />
                     </div>
                   </div>
                 )
@@ -380,7 +384,12 @@ export default function PlagiarismPage() {
                 <span>Cliquez sur « Vérifier le plagiat » pour lancer l&apos;analyse.</span>
               </div>
             ) : (
-              <UploadedDocViewer file={scannedFile} text={result.text} spans={result.flagged_spans} />
+              <UploadedDocViewer
+                file={scannedFile}
+                text={result.text}
+                spans={result.flagged_spans}
+                rewriteConfig={{ canRewrite: canCorrect }}
+              />
             )}
           </div>
 

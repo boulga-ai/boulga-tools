@@ -17,3 +17,10 @@ class PlagiarismCorrectRequest(BaseModel):
 class ScanFeedbackRequest(BaseModel):
     conversation_id: str
     helpful: bool
+
+
+class PassageRewriteRequest(BaseModel):
+    passage: str = Field(min_length=1, max_length=2_000)
+    context_before: str = Field(default="", max_length=2_000)
+    context_after: str = Field(default="", max_length=2_000)
+    tone: Tone | None = None
