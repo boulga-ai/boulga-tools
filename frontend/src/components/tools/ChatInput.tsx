@@ -19,6 +19,7 @@ export function ChatInput({
   settingsSlot,
   value: controlledValue,
   onValueChange,
+  className,
 }: {
   onSend: (message: string) => void;
   placeholder?: string;
@@ -28,6 +29,7 @@ export function ChatInput({
   settingsSlot?: ReactNode;
   value?: string;
   onValueChange?: (value: string) => void;
+  className?: string;
 }) {
   const [internalValue, setInternalValue] = useState("");
   const value = controlledValue ?? internalValue;
@@ -49,7 +51,12 @@ export function ChatInput({
   }
 
   return (
-    <div className="sticky bottom-0 flex items-end gap-2 border-t bg-white p-3 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
+    <div
+      className={cn(
+        "sticky bottom-0 flex items-end gap-2 border-t bg-white p-3 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]",
+        className,
+      )}
+    >
       {settingsSlot && (
         <Popover>
           <PopoverTrigger

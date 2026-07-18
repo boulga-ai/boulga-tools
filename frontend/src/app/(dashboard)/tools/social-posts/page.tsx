@@ -10,25 +10,18 @@ import {
   Share2,
   Repeat,
   Trash2,
-  Square,
-  ChevronRight,
 } from "lucide-react";
 import { ToolLayout } from "@/components/tools/ToolLayout";
 import { ChatMessage } from "@/components/tools/ChatMessage";
+import { ChatInput } from "@/components/tools/ChatInput";
 import { PlatformChips, PLATFORMS } from "@/components/tools/PlatformChips";
 import { ToneChips } from "@/components/tools/ToneChips";
 import { SocialPostCard } from "@/components/tools/SocialPostCard";
 import { CopyButton } from "@/components/tools/CopyButton";
 import { GenerationError } from "@/components/tools/GenerationError";
-import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import {
   Select,
   SelectContent,
@@ -39,7 +32,6 @@ import {
 import { useStreaming } from "@/hooks/useStreaming";
 import { useAuth } from "@/hooks/useAuth";
 import { apiFetch } from "@/lib/api";
-import { cn } from "@/lib/utils";
 
 const DEFAULT_PLATFORM = "facebook";
 const DEFAULT_TONE = "Convivial";
@@ -74,7 +66,6 @@ export default function SocialPostsPage() {
   const [platform, setPlatform] = useState(DEFAULT_PLATFORM);
   const [tone, setTone] = useState(DEFAULT_TONE);
   const [description, setDescription] = useState("");
-  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [audience, setAudience] = useState("");
   const [keywords, setKeywords] = useState("");
   const [cta, setCta] = useState("");
@@ -139,9 +130,8 @@ export default function SocialPostsPage() {
     });
   }
 
-  async function handleGenerate() {
-    if (!description.trim() || isStreaming) return;
-    await generate(buildPayload({ description, platform, tone }), platform, tone, description);
+  async function handleSend(text: string) {
+    await generate(buildPayload({ description: text, platform, tone }), platform, tone, text);
   }
 
   async function handleRefinePreset(instruction: string) {
@@ -235,57 +225,40 @@ export default function SocialPostsPage() {
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="description">Que voulez-vous publier ?</Label>
-            <Textarea
-              id="description"
+            <Label>Que voulez-vous publier ?</Label>
+            <ChatInput
+              onSend={handleSend}
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Ex : On lance notre nouveau service de livraison à Ouagadougou..."
-              className="min-h-28"
-              disabled={isStreaming}
+              onValueChange={setDescription}
+              placeholder="Décrivez ce que vous voulez publier..."
+              isStreaming={isStreaming}
+              onStop={stop}
+              className="static border-0 bg-transparent p-0 shadow-none"
+              settingsSlot={
+                <div className="flex flex-col gap-2">
+                  <Input
+                    value={audience}
+                    onChange={(e) => setAudience(e.target.value)}
+                    placeholder="Audience cible (optionnel)"
+                    disabled={isStreaming}
+                  />
+                  <Input
+                    value={keywords}
+                    onChange={(e) => setKeywords(e.target.value)}
+                    placeholder="Hashtags ou mots-clés (optionnel)"
+                    disabled={isStreaming}
+                  />
+                  <Input
+                    value={cta}
+                    onChange={(e) => setCta(e.target.value)}
+                    placeholder="Appel à l'action (optionnel)"
+                    disabled={isStreaming}
+                  />
+                </div>
+              }
             />
           </div>
-
-          <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
-            <CollapsibleTrigger className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-              <ChevronRight className={cn("size-3.5 transition-transform", advancedOpen && "rotate-90")} />
-              Options avancées
-            </CollapsibleTrigger>
-            <CollapsibleContent className="flex flex-col gap-3 pt-3">
-              <Input
-                value={audience}
-                onChange={(e) => setAudience(e.target.value)}
-                placeholder="Audience cible (optionnel)"
-                disabled={isStreaming}
-              />
-              <Input
-                value={keywords}
-                onChange={(e) => setKeywords(e.target.value)}
-                placeholder="Hashtags ou mots-clés (optionnel)"
-                disabled={isStreaming}
-              />
-              <Input
-                value={cta}
-                onChange={(e) => setCta(e.target.value)}
-                placeholder="Appel à l'action (optionnel)"
-                disabled={isStreaming}
-              />
-            </CollapsibleContent>
-          </Collapsible>
-
-          <div className="flex items-center gap-2">
-            <Button onClick={handleGenerate} disabled={isStreaming || !description.trim()}>
-              <Share2 className="size-4" />
-              {isStreaming ? "Génération..." : "Générer"}
-            </Button>
-            {isStreaming && (
-              <Button variant="outline" onClick={stop}>
-                <Square className="size-4" />
-                Arrêter
-              </Button>
-            )}
-          </div>
-          {error && <GenerationError message={error} isQuotaError={isQuotaError} onRetry={handleGenerate} />}
+          {error && <GenerationError message={error} isQuotaError={isQuotaError} />}
         </div>
 
         {/* Colonne droite — fil des posts generes, defile independamment */}
