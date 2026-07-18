@@ -92,6 +92,7 @@ type ScanResult = {
   human_score: number;
   flagged_spans: { start: number; end: number; ai_score: number }[];
   page_scores: PageScore[];
+  page_ranges: [number, number][];
   pages_analyzed: number;
   total_pages: number;
   pages_exact: boolean;
@@ -396,7 +397,15 @@ export default function AiDetectorPage() {
                 <span>Cliquez sur « Analyser » pour lancer le scan.</span>
               </div>
             ) : (
-              <UploadedDocViewer file={scannedFile} text={result.text} spans={result.flagged_spans} />
+              <UploadedDocViewer
+                file={scannedFile}
+                text={result.text}
+                spans={result.flagged_spans}
+                pageRanges={result.page_ranges}
+                pageScores={result.page_scores}
+                totalPages={result.total_pages}
+                pagesExact={result.pages_exact}
+              />
             )}
           </div>
 

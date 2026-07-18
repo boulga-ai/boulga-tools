@@ -238,6 +238,11 @@ async def detect_ai_content(pages: list[str], tier: str, model: str) -> tuple[di
         "mixed_score": mixed_score,
         "human_score": human_score,
         "page_scores": page_scores,
+        # Bornes (start, end) de chaque page dans `text`, dans le meme ordre que
+        # page_scores — permet au frontend d'afficher le texte extrait DECOUPE PAR PAGE
+        # avec surlignage (voir UploadedDocViewer), sans avoir a redeviner les frontieres
+        # a partir du seul texte concatene.
+        "page_ranges": [[start, end] for start, end in page_ranges],
         "flagged_spans": flagged_spans,
         "pages_analyzed": len(selected_pages),
         "total_pages": len(pages),
