@@ -17,6 +17,8 @@ export function ChatInput({
   isStreaming,
   onStop,
   settingsSlot,
+  value: controlledValue,
+  onValueChange,
 }: {
   onSend: (message: string) => void;
   placeholder?: string;
@@ -24,8 +26,12 @@ export function ChatInput({
   isStreaming?: boolean;
   onStop?: () => void;
   settingsSlot?: ReactNode;
+  value?: string;
+  onValueChange?: (value: string) => void;
 }) {
-  const [value, setValue] = useState("");
+  const [internalValue, setInternalValue] = useState("");
+  const value = controlledValue ?? internalValue;
+  const setValue = onValueChange ?? setInternalValue;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   function submit() {
@@ -43,16 +49,21 @@ export function ChatInput({
   }
 
   return (
-    <div className="flex items-end gap-2 border-t bg-white p-3">
+    <div className="sticky bottom-0 flex items-end gap-2 border-t bg-white p-3 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
       {settingsSlot && (
         <Popover>
           <PopoverTrigger
             render={
-              <Button type="button" variant="outline" size="icon" disabled={disabled} />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                disabled={disabled}
+                aria-label="Options avancées"
+              />
             }
           >
             <Settings2 className="size-4" />
-            <span className="sr-only">Options avancées</span>
           </PopoverTrigger>
           <PopoverContent align="start" side="top">
             {settingsSlot}
@@ -68,6 +79,7 @@ export function ChatInput({
         placeholder={placeholder}
         disabled={disabled}
         rows={1}
+        aria-label="Message"
         className={cn(
           "field-sizing-content max-h-32 min-h-11 flex-1 resize-none rounded-2xl border border-input bg-transparent px-4 py-3 text-sm leading-relaxed outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50",
         )}
@@ -79,10 +91,10 @@ export function ChatInput({
           size="icon"
           variant="destructive"
           onClick={onStop}
+          aria-label="Arrêter"
           className="rounded-full"
         >
           <Square className="size-4" />
-          <span className="sr-only">Arrêter</span>
         </Button>
       ) : (
         value.trim().length > 0 && (
@@ -91,10 +103,10 @@ export function ChatInput({
             size="icon"
             onClick={submit}
             disabled={disabled}
+            aria-label="Envoyer"
             className="rounded-full bg-bleu-boulga text-white hover:bg-bleu-boulga/90"
           >
             <Send className="size-4" />
-            <span className="sr-only">Envoyer</span>
           </Button>
         )
       )}

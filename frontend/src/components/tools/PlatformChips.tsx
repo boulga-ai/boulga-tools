@@ -29,7 +29,7 @@ export function PlatformChips({
   disabled?: boolean;
 }) {
   return (
-    <div className="flex flex-wrap gap-2">
+    <div role="radiogroup" aria-label="Plateforme" className="flex flex-wrap gap-2">
       {PLATFORMS.map((p) => {
         const selected = p.value === value;
         return (
@@ -37,10 +37,11 @@ export function PlatformChips({
             key={p.value}
             type="button"
             disabled={disabled}
-            aria-pressed={selected}
+            role="radio"
+            aria-checked={selected}
             onClick={() => onChange(p.value)}
             className={cn(
-              "flex items-center gap-1.5 rounded-full border border-transparent px-3 py-1.5 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+              "flex items-center gap-1.5 rounded-full border border-transparent px-3 py-1.5 text-sm transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50",
               selected
                 ? "border-bleu-boulga/30 bg-bleu-boulga/10 font-medium text-bleu-boulga"
                 : "bg-gray-100 text-gray-600 hover:bg-gray-200",

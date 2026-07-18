@@ -16,7 +16,7 @@ export function ToolLayout({
 }) {
   return (
     <div
-      className={`mx-auto flex w-full flex-1 flex-col gap-6 px-4 py-6 md:px-8 md:py-8 ${wide ? "max-w-7xl" : "max-w-5xl"}`}
+      className={`mx-auto flex w-full min-h-0 flex-1 flex-col gap-6 px-4 py-6 md:px-8 md:py-8 ${wide ? "max-w-7xl" : "max-w-5xl"}`}
     >
       <div className="flex flex-col gap-1.5">
         {badge}

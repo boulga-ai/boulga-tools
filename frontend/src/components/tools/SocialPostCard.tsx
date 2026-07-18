@@ -40,7 +40,7 @@ export function SocialPostCard({
 
   return (
     <div
-      className="flex flex-col gap-2 rounded-[12px] border-l-4 bg-white p-4"
+      className="flex flex-col gap-2 rounded-[12px] border-l-4 bg-white p-4 shadow-sm"
       style={{ borderLeftColor: PLATFORM_BORDER_COLOR[platform] ?? "#94a3b8" }}
     >
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">

@@ -21,7 +21,7 @@ export function ToneChips({
   disabled?: boolean;
 }) {
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div role="radiogroup" aria-label="Ton" className="flex flex-wrap gap-1.5">
       {TONES.map((t) => {
         const selected = t.value === value;
         return (
@@ -29,10 +29,11 @@ export function ToneChips({
             key={t.value}
             type="button"
             disabled={disabled}
-            aria-pressed={selected}
+            role="radio"
+            aria-checked={selected}
             onClick={() => onChange(t.value)}
             className={cn(
-              "rounded-full px-3 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+              "rounded-full px-3 py-1 text-xs transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50",
               selected
                 ? "bg-bleu-boulga font-medium text-white"
                 : "bg-gray-100 text-gray-500 hover:bg-gray-200",

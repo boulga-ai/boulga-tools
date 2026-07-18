@@ -23,10 +23,15 @@ export function ChatMessage({
   const isUser = role === "user";
 
   return (
-    <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
+    <div
+      className={cn(
+        "flex animate-in fade-in slide-in-from-bottom-2 duration-200",
+        isUser ? "justify-end" : "justify-start",
+      )}
+    >
       <div
         className={cn(
-          "flex flex-col gap-1.5",
+          "flex min-w-0 flex-col gap-1.5",
           isUser ? "max-w-[80%] items-end" : "max-w-[90%] items-start",
         )}
       >
@@ -58,7 +63,7 @@ export function ChatMessage({
           )}
         </div>
         {actions && (
-          <div className="flex flex-wrap gap-2">{actions}</div>
+          <div className="flex flex-wrap gap-1.5">{actions}</div>
         )}
       </div>
     </div>

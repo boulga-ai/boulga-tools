@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { RotateCcw, Bookmark, BookmarkCheck, Plus } from "lucide-react";
+import { RotateCcw, Bookmark, BookmarkCheck, Plus, Share2 } from "lucide-react";
 import { ToolLayout } from "@/components/tools/ToolLayout";
 import { ChatMessage } from "@/components/tools/ChatMessage";
 import { ChatInput } from "@/components/tools/ChatInput";
@@ -28,6 +28,11 @@ import { apiFetch } from "@/lib/api";
 const DEFAULT_PLATFORM = "facebook";
 const DEFAULT_TONE = "Convivial";
 const REFINE_PRESETS = ["Plus court", "Plus percutant", "Ajoute des emojis"];
+const SUGGESTIONS = [
+  "Lancement de produit à Dakar",
+  "Offre de stage en informatique",
+  "Promo week-end restaurant",
+];
 
 type ChatMsg =
   | { id: string; role: "user"; content: string }
@@ -61,6 +66,7 @@ export default function SocialPostsPage() {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [lastOutput, setLastOutput] = useState<LastOutput | null>(null);
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+  const [inputValue, setInputValue] = useState("");
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const { text: output, isStreaming, error, isQuotaError, start, stop } = useStreaming();
 
@@ -223,8 +229,8 @@ export default function SocialPostsPage() {
         ) : undefined
       }
     >
-      <div className="flex flex-1 flex-col rounded-[12px] border bg-card">
-        <div className="flex flex-col gap-2.5 border-b p-3.5">
+      <div className="flex min-h-0 flex-1 flex-col rounded-[12px] border bg-card">
+        <div className="flex flex-col gap-2.5 border-b bg-gray-50/50 p-3.5">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <h2>Posts réseaux sociaux</h2>
@@ -251,11 +257,26 @@ export default function SocialPostsPage() {
           <ToneChips value={tone} onChange={setTone} disabled={isStreaming} />
         </div>
 
-        <div ref={scrollAreaRef} className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
+        <div ref={scrollAreaRef} className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
           {messages.length === 0 ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-1 text-center text-sm text-muted-foreground">
-              Décrivez ce que vous voulez publier, l&apos;IA génère un post adapté à la
-              plateforme choisie.
+            <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
+              <Share2 className="size-12 text-muted-foreground/20" />
+              <p className="text-sm text-muted-foreground">
+                Décrivez ce que vous voulez publier, l&apos;IA génère un post adapté à la
+                plateforme choisie.
+              </p>
+              <div className="flex flex-wrap justify-center gap-2">
+                {SUGGESTIONS.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setInputValue(s)}
+                    className="rounded-full bg-gray-100 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-200"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
             </div>
           ) : (
             messages.map((m) =>
@@ -345,6 +366,8 @@ export default function SocialPostsPage() {
 
         <ChatInput
           onSend={handleSend}
+          value={inputValue}
+          onValueChange={setInputValue}
           placeholder="Décrivez ce que vous voulez publier..."
           isStreaming={isStreaming}
           onStop={stop}
