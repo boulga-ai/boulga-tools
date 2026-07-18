@@ -1,6 +1,6 @@
 import { highlightTier, type HighlightTier } from "@/lib/highlightTier";
 
-type FlaggedSpan = { start: number; end: number; ai_score: number };
+type FlaggedSpan = { start: number; end: number; ai_score: number; reason?: string };
 
 // Meme intensite que le surlignage dans le document (HighlightedText/textMatch) — le
 // point de couleur ici doit rappeler visuellement la marque dans le texte, pas
@@ -54,7 +54,10 @@ export function AiSentenceList({
             <span className={`mt-1.5 size-1.5 shrink-0 rounded-full ${TIER_DOT[s.tier]}`} />
             <div className="flex flex-1 flex-col gap-0.5">
               <p className="leading-snug">{s.quote}</p>
-              <span className="text-xs font-medium text-attention">{s.ai_score}% IA</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-medium text-attention">{s.ai_score}% IA</span>
+                {s.reason && <span className="text-xs text-muted-foreground">· {s.reason}</span>}
+              </div>
             </div>
           </div>
         ))}

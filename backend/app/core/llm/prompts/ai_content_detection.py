@@ -9,13 +9,17 @@ SYSTEM_PROMPT = (
     "généré par une IA. Le document fourni est découpé en pages, chacune précédée d'un "
     "marqueur \"--- PAGE N ---\" (repère de lecture uniquement, à exclure de tes "
     "citations).\n\n"
-    "Indices à rechercher :\n"
-    "- Transitions formulaïques et répétitives (« de plus », « en outre », « par "
-    "ailleurs », « il est important de noter que »).\n"
-    "- Rythme de phrase trop uniforme (longueur et structure syntaxique peu variées) — "
-    "l'écriture humaine a un rythme irrégulier (« burstiness »).\n"
-    "- Absence de détails concrets, personnels ou anecdotiques ; ton généraliste et "
-    "consensuel.\n"
+    "Pour CHAQUE phrase, appuie ton jugement sur des critères concrets, pas une "
+    "impression generale :\n"
+    "- Variabilité lexicale : une IA utilise un vocabulaire limité et répétitif d'une "
+    "phrase à l'autre, avec des connecteurs logiques sur-utilisés (« de plus », « en "
+    "outre », « par ailleurs », « il est important de noter que », « il convient de "
+    "souligner que », « en effet »).\n"
+    "- Structure de phrase : une IA produit des phrases de longueur et de construction "
+    "syntaxique uniformes, souvent avec des structures parallèles répétées ; un humain "
+    "alterne phrases courtes et longues, digresse, change de registre (« burstiness »).\n"
+    "- Spécificité : un humain donne des détails concrets, personnels ou anecdotiques, "
+    "des références précises à son contexte ; une IA reste générale et consensuelle.\n"
     "- Sur-structuration artificielle (listes à puces, plans en trois parties) même "
     "quand le sujet ne l'exige pas.\n"
     "- Grammaire et orthographe trop parfaites, sans les petites imperfections "
@@ -27,7 +31,9 @@ SYSTEM_PROMPT = (
     "correspondrait pas à cette notation phrase par phrase produirait un résultat "
     "incohérent pour l'utilisateur.\n\n"
     "Réponds UNIQUEMENT avec un objet JSON strict, sans fence markdown, de la forme :\n"
-    '{"sentences": [{"quote": "<phrase exacte du texte>", "ai_score": <0-100>}], '
+    '{"sentences": [{"quote": "<phrase exacte du texte>", "ai_score": <0-100>, '
+    '"reason": "<critère principal en quelques mots>"}], '
+    '"ai_vocabulary": ["<expression exacte du texte>"], '
     '"summary": "<une phrase résumant le verdict global>"}\n\n'
     "\"sentences\" DOIT découper l'INTÉGRALITÉ du texte fourni en phrases (une entrée "
     "par phrase, dans l'ordre du texte) et attribuer un ai_score à CHACUNE — y compris "
@@ -36,7 +42,14 @@ SYSTEM_PROMPT = (
     "révélateurs, c'est une couverture complète. Ignore uniquement les fragments non "
     "significatifs (titres isolés, numéros de page, puces vides).\n\n"
     "Chaque \"quote\" DOIT être une citation exacte, mot pour mot, d'un passage du "
-    "texte fourni — jamais une paraphrase."
+    "texte fourni — jamais une paraphrase. \"reason\" est facultatif pour les phrases "
+    "manifestement humaines (score bas), mais attendu pour toute phrase avec un "
+    "ai_score notable (indique le critère ci-dessus qui a le plus pesé : ex. "
+    "« connecteur sur-utilisé », « rythme trop uniforme », « aucun détail concret »).\n\n"
+    "\"ai_vocabulary\" liste les expressions typiques d'un texte généré par IA "
+    "REELLEMENT PRESENTES dans le texte fourni (citations exactes, sans doublon, "
+    "seulement si tu en as effectivement repéré) — pas une liste générique, uniquement "
+    "ce que tu as observé dans CE texte. Tableau vide si aucune."
 )
 
 

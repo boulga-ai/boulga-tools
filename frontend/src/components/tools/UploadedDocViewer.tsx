@@ -35,7 +35,7 @@ function PagedHighlightedText({
           }));
 
         return (
-          <div key={i} className="flex flex-col gap-1.5">
+          <div key={i} id={`doc-page-${i + 1}`} className="flex flex-col gap-1.5">
             <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
               <span>
                 {label} {i + 1} / {totalPages}
@@ -106,7 +106,10 @@ export function UploadedDocViewer({
   }
 
   return (
-    <div className="max-h-[720px] overflow-y-auto rounded-[12px] border bg-card p-4 text-sm">
+    <div
+      id="doc-page-1"
+      className="max-h-[720px] overflow-y-auto rounded-[12px] border bg-card p-4 text-sm"
+    >
       <HighlightedText text={text} spans={spans} />
     </div>
   );

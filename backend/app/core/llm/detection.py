@@ -170,8 +170,8 @@ async def detect_ai_content(pages: list[str], tier: str, model: str) -> tuple[di
     """Estime la probabilite qu'un texte soit genere par IA, page par page, via un LLM
     dedie (solution interimaire en attendant l'integration Originality.ai). Un seul
     appel LLM couvre toutes les pages retenues pour ce palier (voir _select_pages).
-    Renvoie ({ai_score, mixed_score, human_score, page_scores, flagged_spans, text,
-    pages_analyzed, total_pages}, usage)."""
+    Renvoie ({ai_score, mixed_score, human_score, page_scores, page_ranges,
+    flagged_spans, ai_vocabulary, text, pages_analyzed, total_pages}, usage)."""
     selected_pages = _select_pages(pages, tier)
     combined_text = "\n\n".join(selected_pages)
     paginated_text = "\n\n".join(
@@ -207,13 +207,35 @@ async def detect_ai_content(pages: list[str], tier: str, model: str) -> tuple[di
         if span is None:
             continue
         start, end = span
-        flagged_spans.append(
-            {"start": start, "end": end, "ai_score": _clamp_score(item.get("ai_score"))}
-        )
+        flagged_span: dict = {
+            "start": start,
+            "end": end,
+            "ai_score": _clamp_score(item.get("ai_score")),
+        }
+        reason = item.get("reason")
+        if isinstance(reason, str) and reason.strip():
+            flagged_span["reason"] = reason.strip()
+        flagged_spans.append(flagged_span)
 
     # Score global : derive des memes spans que ceux surlignes, jamais d'un chiffre
     # separe (voir _weighted_tier_pcts).
     ai_score, mixed_score, human_score = _weighted_tier_pcts(flagged_spans, len(combined_text))
+
+    # Vocabulaire IA : meme garde-fou anti-hallucination que les citations de phrases
+    # (_locate_span) — n'accepte que des expressions reellement presentes dans le texte
+    # analyse, jamais une liste generique fournie de memoire par le LLM. Deduplique en
+    # conservant l'ordre d'apparition dans le texte.
+    ai_vocabulary: list[str] = []
+    seen_vocabulary: set[str] = set()
+    for term in data.get("ai_vocabulary") or []:
+        if not isinstance(term, str) or not term.strip():
+            continue
+        term = term.strip()
+        key = term.lower()
+        if key in seen_vocabulary or _locate_span(combined_text, term) is None:
+            continue
+        seen_vocabulary.add(key)
+        ai_vocabulary.append(term)
 
     page_scores = []
     for i, page_text in enumerate(selected_pages):
@@ -244,6 +266,7 @@ async def detect_ai_content(pages: list[str], tier: str, model: str) -> tuple[di
         # a partir du seul texte concatene.
         "page_ranges": [[start, end] for start, end in page_ranges],
         "flagged_spans": flagged_spans,
+        "ai_vocabulary": ai_vocabulary,
         "pages_analyzed": len(selected_pages),
         "total_pages": len(pages),
     }

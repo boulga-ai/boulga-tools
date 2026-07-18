@@ -22,6 +22,7 @@ import { HighlightedText } from "@/components/tools/HighlightedText";
 import { UploadedDocViewer } from "@/components/tools/UploadedDocViewer";
 import { PageScoreList } from "@/components/tools/PageScoreList";
 import { AiSentenceList } from "@/components/tools/AiSentenceList";
+import { AiVocabularyList } from "@/components/tools/AiVocabularyList";
 import { ScoreRing } from "@/components/tools/ScoreRing";
 import { HistoryList, type HistoryItem } from "@/components/tools/HistoryList";
 import { FeedbackButtons } from "@/components/tools/FeedbackButtons";
@@ -90,9 +91,10 @@ type ScanResult = {
   ai_score: number;
   mixed_score: number;
   human_score: number;
-  flagged_spans: { start: number; end: number; ai_score: number }[];
+  flagged_spans: { start: number; end: number; ai_score: number; reason?: string }[];
   page_scores: PageScore[];
   page_ranges: [number, number][];
+  ai_vocabulary: string[];
   pages_analyzed: number;
   total_pages: number;
   pages_exact: boolean;
@@ -232,6 +234,19 @@ export default function AiDetectorPage() {
     } finally {
       setScanning(false);
     }
+  }
+
+  // Fait defiler le viewer jusqu'a la premiere occurrence d'un marqueur de vocabulaire
+  // IA (voir AiVocabularyList) — retrouve la page qui contient cette occurrence via
+  // page_ranges (chaque page du viewer porte un id "doc-page-N", voir
+  // UploadedDocViewer) plutot que de cibler un noeud de texte precis dans le DOM.
+  function scrollToVocabTerm(term: string) {
+    if (!result) return;
+    const idx = result.text.indexOf(term);
+    if (idx === -1) return;
+    const pageIdx = result.page_ranges.findIndex(([start, end]) => idx >= start && idx < end);
+    const anchorId = pageIdx >= 0 ? `doc-page-${pageIdx + 1}` : "doc-page-1";
+    document.getElementById(anchorId)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function handleExport() {
@@ -375,7 +390,10 @@ export default function AiDetectorPage() {
                         Modifier
                       </button>
                     </div>
-                    <div className="flex-1 overflow-y-auto rounded-lg border p-2.5 text-sm">
+                    <div
+                      id="doc-page-1"
+                      className="flex-1 overflow-y-auto rounded-lg border p-2.5 text-sm"
+                    >
                       <HighlightedText text={result.text} spans={result.flagged_spans} />
                     </div>
                   </div>
@@ -466,6 +484,8 @@ export default function AiDetectorPage() {
                 {showSentences ? "Vue simple" : "Phrases signalées"}
               </button>
               {showSentences && <AiSentenceList text={result.text} spans={result.flagged_spans} />}
+
+              <AiVocabularyList terms={result.ai_vocabulary} onSelect={scrollToVocabTerm} />
 
               {result.total_pages > 1 && (
                 <>
