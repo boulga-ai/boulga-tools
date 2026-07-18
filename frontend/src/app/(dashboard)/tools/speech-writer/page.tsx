@@ -1,3 +1,4 @@
+// components/tools/SpeechWriter.tsx
 "use client";
 
 import { useState } from "react";

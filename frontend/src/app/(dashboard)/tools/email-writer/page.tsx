@@ -1,3 +1,4 @@
+// components/tools/EmailWriter.tsx
 "use client";
 
 import { useEffect, useState } from "react";
