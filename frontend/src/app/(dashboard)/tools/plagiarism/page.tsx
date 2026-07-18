@@ -2,7 +2,18 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Shield, Loader2, ExternalLink, Square, Clock, Plus, Download } from "lucide-react";
+import {
+  Shield,
+  Loader2,
+  ExternalLink,
+  Square,
+  History,
+  Plus,
+  Download,
+  Upload,
+  X,
+  FileText,
+} from "lucide-react";
 import { ToolLayout } from "@/components/tools/ToolLayout";
 import { DropZone } from "@/components/tools/DropZone";
 import { CopyButton } from "@/components/tools/CopyButton";
@@ -16,6 +27,19 @@ import { HistoryList, type HistoryItem } from "@/components/tools/HistoryList";
 import { FeedbackButtons } from "@/components/tools/FeedbackButtons";
 import { ModeToggle } from "@/components/tools/ModeToggle";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
 import {
   Select,
   SelectContent,
@@ -84,6 +108,10 @@ export default function PlagiarismPage() {
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
   const [editingText, setEditingText] = useState(true);
+  // Modale de depot de fichier et tiroir d'historique — meme pattern que
+  // ai-detector/page.tsx (voir Prompt 1).
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
   // Fichier reellement analyse par le dernier scan reussi — distinct de `file` (la
   // selection courante), voir ai-detector/page.tsx pour le meme pattern.
   const [scannedFile, setScannedFile] = useState<File | null>(null);
@@ -216,6 +244,9 @@ export default function PlagiarismPage() {
     });
   }
 
+  const counterText = result ? result.text : mode === "text" ? text : "";
+  const showCounter = result !== null || (mode === "text" && text.trim().length > 0);
+
   return (
     <ToolLayout
       title="Vérificateur de plagiat"
@@ -225,25 +256,14 @@ export default function PlagiarismPage() {
           Score gratuit
         </span>
       }
+      wide
     >
-      <div className="grid flex-1 grid-cols-1 gap-4 lg:grid-cols-[200px_1fr]">
-        <div className="order-2 flex flex-col gap-2 lg:order-1">
-          <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            <Clock className="size-3.5" />
-            Historique
-          </p>
-          <p className="text-xs text-muted-foreground">Fichiers vérifiés uniquement.</p>
-          <HistoryList
-            items={history}
-            onSelect={openHistoryItem}
-            emptyLabel="Aucun fichier vérifié pour le moment."
-            scoreLabel="Plagiat"
-          />
-        </div>
-
-        <div className="order-1 flex flex-col gap-6 lg:order-2">
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="grid flex-1 grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
+        {/* Colonne gauche — viewer/editeur, dominant, façon GPTZero */}
+        <div className="flex flex-col gap-3 rounded-[12px] border bg-card p-3">
+          {/* Barre superieure */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
               <ModeToggle
                 mode={mode}
                 onChange={(m) => {
@@ -252,6 +272,35 @@ export default function PlagiarismPage() {
                   setEditingText(true);
                 }}
               />
+              {mode === "file" &&
+                (file ? (
+                  <div className="flex items-center gap-1.5 rounded-[8px] border bg-background px-2.5 py-1.5 text-xs">
+                    <span className="max-w-40 truncate">{file.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => setFile(null)}
+                      className="text-muted-foreground hover:text-erreur"
+                      title="Retirer le fichier"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <Button variant="outline" size="sm" onClick={() => setUploadModalOpen(true)}>
+                    <Upload className="size-3.5" />
+                    Charger un fichier
+                  </Button>
+                ))}
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setHistoryDrawerOpen(true)}
+                className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-bleu-boulga"
+              >
+                <History className="size-3.5" />
+                Historique
+              </button>
               {(text.trim() || file || result) && (
                 <button
                   type="button"
@@ -263,15 +312,18 @@ export default function PlagiarismPage() {
                 </button>
               )}
             </div>
+          </div>
 
+          {/* Zone principale */}
+          <div className="flex min-h-[420px] flex-1 flex-col">
             {mode === "text" ? (
               showTextEditor ? (
-                <>
+                <div className="flex flex-1 flex-col gap-2">
                   <RichTextEditor
                     value={text}
                     onChange={setText}
                     placeholder="Collez le texte à vérifier..."
-                    className="min-h-32"
+                    className="min-h-[380px] flex-1"
                   />
                   {!text.trim() && (
                     <div className="flex flex-col gap-1.5">
@@ -290,10 +342,10 @@ export default function PlagiarismPage() {
                       </div>
                     </div>
                   )}
-                </>
+                </div>
               ) : (
                 result && (
-                  <div className="flex flex-col gap-1.5">
+                  <div className="flex flex-1 flex-col gap-1.5">
                     <div className="flex items-center justify-between">
                       <p className="text-xs font-medium uppercase text-muted-foreground">
                         Texte vérifié
@@ -306,35 +358,34 @@ export default function PlagiarismPage() {
                         Modifier
                       </button>
                     </div>
-                    <div className="min-h-32 rounded-lg border p-2.5 text-sm">
+                    <div className="flex-1 overflow-y-auto rounded-lg border p-2.5 text-sm">
                       <HighlightedText text={result.text} spans={result.flagged_spans} />
                     </div>
                   </div>
                 )
               )
+            ) : !file ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-[8px] border border-dashed p-8 text-center text-sm text-muted-foreground">
+                <FileText className="size-6" />
+                Aucun fichier chargé.
+                <Button variant="outline" size="sm" onClick={() => setUploadModalOpen(true)}>
+                  <Upload className="size-3.5" />
+                  Charger un fichier
+                </Button>
+              </div>
+            ) : !result || isStale ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-[8px] border border-dashed p-8 text-center text-sm text-muted-foreground">
+                <FileText className="size-6" />
+                <span className="font-medium text-foreground">{file.name}</span>
+                <span>Cliquez sur « Vérifier le plagiat » pour lancer l&apos;analyse.</span>
+              </div>
             ) : (
-              <>
-                {file ? (
-                  <div className="flex items-center gap-2 rounded-[8px] border bg-card p-3 text-sm">
-                    <span className="flex-1 truncate">{file.name}</span>
-                    <button
-                      type="button"
-                      onClick={() => setFile(null)}
-                      className="text-xs text-muted-foreground hover:text-erreur"
-                    >
-                      Retirer
-                    </button>
-                  </div>
-                ) : (
-                  <DropZone
-                    onFiles={(files) => setFile(files[0])}
-                    accept=".pdf,.docx,.txt"
-                    label="Glissez-déposez un PDF, DOCX ou TXT, ou"
-                  />
-                )}
-              </>
+              <UploadedDocViewer file={scannedFile} text={result.text} spans={result.flagged_spans} />
             )}
+          </div>
 
+          {/* Barre inferieure */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
             <Button
               onClick={handleScan}
               disabled={submitting || (mode === "text" ? !text.trim() : !file)}
@@ -343,55 +394,84 @@ export default function PlagiarismPage() {
               {submitting ? <Loader2 className="size-4 animate-spin" /> : <Shield className="size-4" />}
               {submitting ? "Analyse en cours..." : "Vérifier le plagiat"}
             </Button>
-          </div>
-
-          {result && (
-            <div className="flex flex-col gap-4 border-t pt-6">
-              {result.sample_word_count < LOW_CONFIDENCE_WORD_THRESHOLD && (
-                <p className="rounded-[8px] border border-attention/40 bg-attention/10 p-2.5 text-xs text-attention">
-                  Ce texte fait moins de {LOW_CONFIDENCE_WORD_THRESHOLD} mots analysés : le résultat peut être moins fiable.
-                </p>
-              )}
-
-              {mode === "file" ? (
-                // Viewer a gauche (defilement continu, dominant) / resultats a droite dans une
-                // colonne resserree, comme GPTZero — le fichier occupe l'essentiel de l'espace.
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_280px]">
-                  <UploadedDocViewer file={scannedFile} text={result.text} spans={result.flagged_spans} />
-
-                  <ResultSummary result={result} />
-                </div>
-              ) : (
-                <ResultSummary result={result} />
-              )}
-
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
-                <div className="flex items-center gap-3">
-                  {mode === "file" && result.conversation_id && (
-                    <FeedbackButtons
-                      endpoint="/api/v1/tools/analyzers/plagiarism/feedback"
-                      conversationId={result.conversation_id}
-                    />
-                  )}
-                  <button
-                    type="button"
-                    onClick={handleExport}
-                    className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-bleu-boulga"
-                  >
-                    <Download className="size-3.5" />
-                    Exporter
-                  </button>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              {result && (
+                <>
                   <span className={isStale ? "font-medium text-attention" : undefined}>
                     {isStale ? "Contenu modifié — relancez l'analyse" : "Résultat à jour"}
                   </span>
-                  <span>·</span>
-                  <span>
-                    {result.text.length.toLocaleString("fr-FR")} caractères •{" "}
-                    {countWords(result.text).toLocaleString("fr-FR")} mots
-                  </span>
-                </div>
+                  {showCounter && <span>·</span>}
+                </>
+              )}
+              {showCounter && (
+                <span>
+                  {counterText.length.toLocaleString("fr-FR")} caractères •{" "}
+                  {countWords(counterText).toLocaleString("fr-FR")} mots
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Colonne droite — resultats et actions, compacte */}
+        <div className="flex flex-col gap-4">
+          {!result ? (
+            <p className="text-sm text-muted-foreground">
+              Lancez une vérification pour voir les résultats.
+            </p>
+          ) : (
+            <>
+              {result.sample_word_count < LOW_CONFIDENCE_WORD_THRESHOLD && (
+                <p className="rounded-[8px] border border-attention/40 bg-attention/10 p-2.5 text-xs text-attention">
+                  Ce texte fait moins de {LOW_CONFIDENCE_WORD_THRESHOLD} mots analysés : le résultat
+                  peut être moins fiable.
+                </p>
+              )}
+
+              <div className="flex items-center gap-3">
+                <ScoreRing score={result.similarity_score} label="Plagiat" />
+                <p className="text-sm text-muted-foreground">
+                  {confidenceSentence(result.similarity_score, "ce texte contient du contenu plagié")}
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                {result.flagged_spans.length === 0 && (
+                  <p className="text-sm text-muted-foreground">Aucun passage suspect détecté.</p>
+                )}
+                {result.flagged_spans.map((span, i) => (
+                  <div key={i} className="rounded-[8px] border bg-attention/10 p-3 text-sm">
+                    <p>{span.text}</p>
+                    <div className="mt-1.5 flex items-center gap-3 text-xs text-muted-foreground">
+                      <span>{span.similarity}% de similarité</span>
+                      <a
+                        href={span.source_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1 text-bleu-boulga hover:underline"
+                      >
+                        Source <ExternalLink className="size-3" />
+                      </a>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3 border-t pt-3">
+                {mode === "file" && result.conversation_id && (
+                  <FeedbackButtons
+                    endpoint="/api/v1/tools/analyzers/plagiarism/feedback"
+                    conversationId={result.conversation_id}
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={handleExport}
+                  className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-bleu-boulga"
+                >
+                  <Download className="size-3.5" />
+                  Exporter
+                </button>
               </div>
 
               {result.flagged_spans.length > 0 && (
@@ -449,45 +529,48 @@ export default function PlagiarismPage() {
                   )}
                 </div>
               )}
-            </div>
+            </>
           )}
         </div>
       </div>
-    </ToolLayout>
-  );
-}
 
-function ResultSummary({ result }: { result: ScanResult }) {
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-3">
-        <ScoreRing score={result.similarity_score} label="Plagiat" />
-        <p className="text-sm text-muted-foreground">
-          {confidenceSentence(result.similarity_score, "ce texte contient du contenu plagié")}
-        </p>
-      </div>
+      {/* Modale de depot de fichier */}
+      <Dialog open={uploadModalOpen} onOpenChange={setUploadModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Charger un fichier</DialogTitle>
+          </DialogHeader>
+          <DropZone
+            onFiles={(files) => {
+              setFile(files[0]);
+              setUploadModalOpen(false);
+            }}
+            accept=".pdf,.docx,.txt"
+            label="Glissez-déposez un PDF, DOCX ou TXT, ou"
+          />
+        </DialogContent>
+      </Dialog>
 
-      <div className="flex flex-col gap-2">
-        {result.flagged_spans.length === 0 && (
-          <p className="text-sm text-muted-foreground">Aucun passage suspect détecté.</p>
-        )}
-        {result.flagged_spans.map((span, i) => (
-          <div key={i} className="rounded-[8px] border bg-attention/10 p-3 text-sm">
-            <p>{span.text}</p>
-            <div className="mt-1.5 flex items-center gap-3 text-xs text-muted-foreground">
-              <span>{span.similarity}% de similarité</span>
-              <a
-                href={span.source_url}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1 text-bleu-boulga hover:underline"
-              >
-                Source <ExternalLink className="size-3" />
-              </a>
-            </div>
+      {/* Tiroir d'historique */}
+      <Sheet open={historyDrawerOpen} onOpenChange={setHistoryDrawerOpen}>
+        <SheetContent side="left">
+          <SheetHeader>
+            <SheetTitle>Historique</SheetTitle>
+            <SheetDescription>Fichiers vérifiés uniquement.</SheetDescription>
+          </SheetHeader>
+          <div className="flex-1 overflow-y-auto px-4 pb-4">
+            <HistoryList
+              items={history}
+              onSelect={(id) => {
+                openHistoryItem(id);
+                setHistoryDrawerOpen(false);
+              }}
+              emptyLabel="Aucun fichier vérifié pour le moment."
+              scoreLabel="Plagiat"
+            />
           </div>
-        ))}
-      </div>
-    </div>
+        </SheetContent>
+      </Sheet>
+    </ToolLayout>
   );
 }
