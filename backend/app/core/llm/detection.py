@@ -1,8 +1,8 @@
+import asyncio
 import re
 
 from app.core.llm.client import complete_json
 from app.core.llm.prompts import ai_content_detection, plagiarism_detection
-from app.core.llm.router import TIER_GROUPS
 
 # Variantes d'apostrophe/guillemet simple rencontrees selon l'origine du texte (saisie
 # directe, extraction PDF/DOCX) et la normalisation que le LLM applique en "citant" un
@@ -14,16 +14,26 @@ _APOSTROPHE_VARIANTS = "['’‘ʼ`´]"
 # document proche de la limite de 50 000 caracteres du formulaire.
 MAX_DETECTION_CHARS = 12_000
 
-# Nombre de pages analysees pour le detecteur IA, selon le palier — meme regroupement
-# que le routing des modeles (TIER_GROUPS). Un seul appel LLM couvre toutes les pages
-# retenues (pas un appel par page, qui multiplierait le cout par la longueur du doc).
+# Nombre de pages analysees pour le detecteur IA, selon le palier — un palier par palier
+# (pas le regroupement TIER_GROUPS du routing des modeles : le nombre de pages est une
+# dimension differente du choix de modele, et le palier "goutte" doit voir plus de pages
+# que "introduction" meme s'ils partagent le meme groupe de modeles).
 PAGE_LIMITS = {
-    "introduction": 5,
-    "goutte_source": 15,
-    "fleuve_ocean": 40,
+    "introduction": 3,
+    "goutte": 10,
+    "source": 25,
+    "fleuve": 50,
+    "ocean": 200,  # illimite en pratique ; le vrai plafond de cout reste MAX_TOTAL_PAGE_CHARS
 }
 # Filet de securite cout meme sur peu de pages tres denses.
 MAX_TOTAL_PAGE_CHARS = 20_000
+
+# Chaque page consequente recoit son propre appel LLM (voir _batch_pages) ; les pages
+# courtes voisines sont regroupees jusqu'a ce budget de caracteres pour ne pas gaspiller
+# un appel entier sur une poignee de mots. Appels lances en parallele (asyncio.gather),
+# plafonnes a MAX_CONCURRENT_CALLS simultanes pour ne pas surcharger OpenRouter.
+MAX_CHARS_PER_BATCH = 6_000
+MAX_CONCURRENT_CALLS = 4
 
 # Recherche web (plagiat uniquement) : plafonnee a 3 resultats pour contenir le cout
 # (OpenRouter/Exa facture par resultat, voir client.py).
@@ -151,8 +161,7 @@ def _select_pages(pages: list[str], tier: str) -> list[str]:
     """Retient les N premieres pages selon le palier (voir PAGE_LIMITS), puis applique
     un filet de securite en caracteres cumules au cas ou ces pages seraient tres
     denses."""
-    group = TIER_GROUPS.get(tier, "introduction")
-    max_pages = PAGE_LIMITS.get(group, PAGE_LIMITS["introduction"])
+    max_pages = PAGE_LIMITS.get(tier, PAGE_LIMITS["introduction"])
     selected = pages[:max_pages]
 
     capped: list[str] = []
@@ -166,17 +175,64 @@ def _select_pages(pages: list[str], tier: str) -> list[str]:
     return capped
 
 
+def _batch_pages(pages: list[str]) -> list[tuple[int, int]]:
+    """Regroupe les indices de pages consecutives en lots bornes par
+    MAX_CHARS_PER_BATCH caracteres cumules, renvoyant (start_idx, end_idx_exclusif) par
+    lot. Une page a elle seule au-dessus du budget reste seule dans son lot (jamais
+    tronquee ici : le filet de securite global vit dans _select_pages)."""
+    if not pages:
+        return []
+    batches: list[tuple[int, int]] = []
+    start = 0
+    total = 0
+    for i, page in enumerate(pages):
+        if total > 0 and total + len(page) > MAX_CHARS_PER_BATCH:
+            batches.append((start, i))
+            start = i
+            total = 0
+        total += len(page)
+    batches.append((start, len(pages)))
+    return batches
+
+
+async def _call_batch(
+    model: str,
+    selected_pages: list[str],
+    start_idx: int,
+    end_idx: int,
+    semaphore: asyncio.Semaphore,
+) -> tuple[dict, dict]:
+    """Un appel LLM independant pour un lot de pages consecutives (voir _batch_pages) —
+    la numerotation des pages dans le prompt reste globale (start_idx+1, pas 1) pour que
+    le modele reste coherent avec le reste du document meme s'il n'en voit qu'un extrait.
+    Le semaphore borne le nombre d'appels simultanes (voir MAX_CONCURRENT_CALLS)."""
+    batch_pages = selected_pages[start_idx:end_idx]
+    paginated_text = "\n\n".join(
+        f"--- PAGE {start_idx + i + 1} ---\n{page}" for i, page in enumerate(batch_pages)
+    )
+    messages = [
+        {"role": "system", "content": ai_content_detection.SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": ai_content_detection.build_user_message(paginated_text, len(batch_pages)),
+        },
+    ]
+    async with semaphore:
+        return await complete_json(model, messages)
+
+
 async def detect_ai_content(pages: list[str], tier: str, model: str) -> tuple[dict, dict]:
     """Estime la probabilite qu'un texte soit genere par IA, page par page, via un LLM
-    dedie (solution interimaire en attendant l'integration Originality.ai). Un seul
-    appel LLM couvre toutes les pages retenues pour ce palier (voir _select_pages).
+    dedie (solution interimaire en attendant l'integration Originality.ai). Chaque page
+    consequente recoit son propre appel LLM independant (les pages courtes voisines sont
+    regroupees en lots, voir _batch_pages) ; les appels sont lances en parallele
+    (asyncio.gather, plafonnes a MAX_CONCURRENT_CALLS simultanes) — les page_scores
+    refletent ainsi de vrais jugements independants par page, pas un sous-produit
+    approximatif d'un unique jugement global sur tout le document.
     Renvoie ({ai_score, mixed_score, human_score, page_scores, page_ranges,
     flagged_spans, ai_vocabulary, text, pages_analyzed, total_pages}, usage)."""
     selected_pages = _select_pages(pages, tier)
     combined_text = "\n\n".join(selected_pages)
-    paginated_text = "\n\n".join(
-        f"--- PAGE {i + 1} ---\n{page}" for i, page in enumerate(selected_pages)
-    )
 
     # Bornes (start, end) de chaque page dans combined_text — permet d'attribuer chaque
     # phrase localisee a sa page d'origine sans redemander quoi que ce soit au LLM.
@@ -188,54 +244,71 @@ async def detect_ai_content(pages: list[str], tier: str, model: str) -> tuple[di
         page_ranges.append((start, end))
         offset = end + 2  # separateur "\n\n"
 
-    messages = [
-        {"role": "system", "content": ai_content_detection.SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": ai_content_detection.build_user_message(
-                paginated_text, len(selected_pages)
-            ),
-        },
+    batches = [
+        (start_idx, end_idx)
+        for start_idx, end_idx in _batch_pages(selected_pages)
+        # Un lot dont toutes les pages sont vides n'a rien a analyser — inutile de
+        # depenser un appel LLM dessus (typiquement une page image/blanche isolee).
+        if "".join(selected_pages[start_idx:end_idx]).strip()
     ]
-    data, usage = await complete_json(model, messages)
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_CALLS)
+    batch_results = await asyncio.gather(
+        *(_call_batch(model, selected_pages, start_idx, end_idx, semaphore) for start_idx, end_idx in batches)
+    )
 
     flagged_spans = []
-    for item in data.get("sentences") or []:
-        if not isinstance(item, dict):
-            continue
-        span = _locate_span(combined_text, item.get("quote"))
-        if span is None:
-            continue
-        start, end = span
-        flagged_span: dict = {
-            "start": start,
-            "end": end,
-            "ai_score": _clamp_score(item.get("ai_score")),
-        }
-        reason = item.get("reason")
-        if isinstance(reason, str) and reason.strip():
-            flagged_span["reason"] = reason.strip()
-        flagged_spans.append(flagged_span)
-
-    # Score global : derive des memes spans que ceux surlignes, jamais d'un chiffre
-    # separe (voir _weighted_tier_pcts).
-    ai_score, mixed_score, human_score = _weighted_tier_pcts(flagged_spans, len(combined_text))
-
-    # Vocabulaire IA : meme garde-fou anti-hallucination que les citations de phrases
-    # (_locate_span) — n'accepte que des expressions reellement presentes dans le texte
-    # analyse, jamais une liste generique fournie de memoire par le LLM. Deduplique en
-    # conservant l'ordre d'apparition dans le texte.
     ai_vocabulary: list[str] = []
     seen_vocabulary: set[str] = set()
-    for term in data.get("ai_vocabulary") or []:
-        if not isinstance(term, str) or not term.strip():
-            continue
-        term = term.strip()
-        key = term.lower()
-        if key in seen_vocabulary or _locate_span(combined_text, term) is None:
-            continue
-        seen_vocabulary.add(key)
-        ai_vocabulary.append(term)
+    usage = {"tokens_in": 0, "tokens_out": 0}
+
+    for (start_idx, end_idx), (data, batch_usage) in zip(batches, batch_results):
+        usage["tokens_in"] += batch_usage.get("tokens_in", 0)
+        usage["tokens_out"] += batch_usage.get("tokens_out", 0)
+
+        # Un lot ne peut citer que sa propre tranche de combined_text (c'est tout ce que
+        # ce lot a vu) — chercher la citation dans cette seule tranche plutot que dans
+        # combined_text entier evite qu'une phrase/expression identique repetee sur une
+        # autre page (ex. un en-tete) ne soit attribuee a la mauvaise page.
+        batch_start = page_ranges[start_idx][0]
+        batch_end = page_ranges[end_idx - 1][1]
+        batch_text = combined_text[batch_start:batch_end]
+
+        for item in data.get("sentences") or []:
+            if not isinstance(item, dict):
+                continue
+            span = _locate_span(batch_text, item.get("quote"))
+            if span is None:
+                continue
+            start, end = span
+            flagged_span: dict = {
+                "start": batch_start + start,
+                "end": batch_start + end,
+                "ai_score": _clamp_score(item.get("ai_score")),
+            }
+            reason = item.get("reason")
+            if isinstance(reason, str) and reason.strip():
+                flagged_span["reason"] = reason.strip()
+            flagged_spans.append(flagged_span)
+
+        # Vocabulaire IA : meme garde-fou anti-hallucination que les citations de
+        # phrases (_locate_span) — n'accepte que des expressions reellement presentes
+        # dans le texte analyse, jamais une liste generique fournie de memoire par le
+        # LLM. Deduplique entre lots en conservant l'ordre d'apparition dans le texte.
+        for term in data.get("ai_vocabulary") or []:
+            if not isinstance(term, str) or not term.strip():
+                continue
+            term = term.strip()
+            key = term.lower()
+            if key in seen_vocabulary or _locate_span(batch_text, term) is None:
+                continue
+            seen_vocabulary.add(key)
+            ai_vocabulary.append(term)
+
+    # Score global : derive des memes spans que ceux surlignes, jamais d'un chiffre
+    # separe (voir _weighted_tier_pcts). Ponderer par la longueur de chaque span revient
+    # a ponderer par la taille de chaque page dans le score global — pas besoin d'une
+    # moyenne separee des page_scores.
+    ai_score, mixed_score, human_score = _weighted_tier_pcts(flagged_spans, len(combined_text))
 
     page_scores = []
     for i, page_text in enumerate(selected_pages):
