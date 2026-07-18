@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { RotateCcw, Bookmark, BookmarkCheck, Plus, Share2 } from "lucide-react";
+import { RotateCcw, Bookmark, BookmarkCheck, Plus, Share2, Repeat, Trash2 } from "lucide-react";
 import { ToolLayout } from "@/components/tools/ToolLayout";
 import { ChatMessage } from "@/components/tools/ChatMessage";
 import { ChatInput } from "@/components/tools/ChatInput";
@@ -208,6 +208,22 @@ export default function SocialPostsPage() {
     }
   }
 
+  function handleDelete(id: string) {
+    const next = messages.filter((m) => m.id !== id);
+    setMessages(next);
+    const newLast = [...next].reverse().find((m) => m.role === "assistant");
+    setLastOutput(
+      newLast
+        ? {
+            content: newLast.content,
+            description: newLast.description,
+            platform: newLast.platform,
+            tone: newLast.tone,
+          }
+        : null,
+    );
+  }
+
   function handleNewConversation() {
     setMessages([]);
     setLastOutput(null);
@@ -291,15 +307,25 @@ export default function SocialPostsPage() {
                   badge={badgeLabel}
                   actions={
                     <>
-                      <CopyButton text={m.content} variant="outline" size="sm" disabled={isStreaming} />
+                      <CopyButton
+                        text={m.content}
+                        label=""
+                        copiedLabel=""
+                        variant="outline"
+                        size="icon-sm"
+                        disabled={isStreaming}
+                        aria-label="Copier"
+                        title="Copier"
+                      />
                       <Button
                         variant="outline"
-                        size="sm"
+                        size="icon-sm"
                         onClick={() => handleRegenerate(m)}
                         disabled={isStreaming}
+                        aria-label="Régénérer"
+                        title="Régénérer"
                       >
                         <RotateCcw className="size-3.5" />
-                        Régénérer
                       </Button>
                       <Select
                         value={undefined}
@@ -308,8 +334,14 @@ export default function SocialPostsPage() {
                         }
                         disabled={isStreaming}
                       >
-                        <SelectTrigger size="sm" className="w-fit text-xs">
-                          <SelectValue placeholder="Adapter pour..." />
+                        <SelectTrigger
+                          size="sm"
+                          className="w-fit gap-1 px-1.5"
+                          aria-label="Adapter pour un autre réseau"
+                          title="Adapter pour un autre réseau"
+                        >
+                          <Repeat className="size-3.5" />
+                          <SelectValue placeholder="" />
                         </SelectTrigger>
                         <SelectContent>
                           {PLATFORMS.filter((p) => p.value !== m.platform).map((p) => (
@@ -322,17 +354,28 @@ export default function SocialPostsPage() {
                       </Select>
                       <Button
                         variant="outline"
-                        size="sm"
+                        size="icon-sm"
                         onClick={() => handleSave(m)}
                         disabled={savedIds.has(m.id)}
-                        title={savedIds.has(m.id) ? "Sauvegardé" : undefined}
+                        aria-label={savedIds.has(m.id) ? "Sauvegardé" : "Sauvegarder"}
+                        title={savedIds.has(m.id) ? "Sauvegardé" : "Sauvegarder"}
                       >
                         {savedIds.has(m.id) ? (
                           <BookmarkCheck className="size-3.5" />
                         ) : (
                           <Bookmark className="size-3.5" />
                         )}
-                        {savedIds.has(m.id) ? "Sauvegardé" : "Sauvegarder"}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => handleDelete(m.id)}
+                        disabled={isStreaming}
+                        aria-label="Supprimer"
+                        title="Supprimer"
+                        className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      >
+                        <Trash2 className="size-3.5" />
                       </Button>
                     </>
                   }
