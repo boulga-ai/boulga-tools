@@ -247,28 +247,25 @@ export default function SocialPostsPage() {
     >
       <div className="flex min-h-0 flex-1 flex-col rounded-[12px] border bg-card">
         <div className="flex flex-col gap-2.5 border-b bg-gray-50/50 p-3.5">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <h2>Posts réseaux sociaux</h2>
-              {messages.length > 0 && (
-                <button
-                  type="button"
-                  onClick={handleNewConversation}
-                  className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-bleu-boulga"
-                  title="Nouvelle conversation"
-                >
-                  <Plus className="size-3.5" />
-                  Nouvelle conversation
-                </button>
+          {messages.length > 0 && (
+            <div className="flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={handleNewConversation}
+                className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-bleu-boulga"
+                title="Nouvelle conversation"
+              >
+                <Plus className="size-3.5" />
+                Nouvelle conversation
+              </button>
+              {generationCount > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  {generationCount} post{generationCount > 1 ? "s" : ""} généré
+                  {generationCount > 1 ? "s" : ""}
+                </span>
               )}
             </div>
-            {generationCount > 0 && (
-              <span className="text-xs text-muted-foreground">
-                {generationCount} post{generationCount > 1 ? "s" : ""} généré
-                {generationCount > 1 ? "s" : ""}
-              </span>
-            )}
-          </div>
+          )}
           <PlatformChips value={platform} onChange={setPlatform} disabled={isStreaming} />
           <ToneChips value={tone} onChange={setTone} disabled={isStreaming} />
         </div>
