@@ -3,17 +3,32 @@
 
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { RotateCcw, Bookmark, BookmarkCheck, Plus, Share2, Repeat, Trash2 } from "lucide-react";
+import {
+  RotateCcw,
+  Bookmark,
+  BookmarkCheck,
+  Share2,
+  Repeat,
+  Trash2,
+  Square,
+  ChevronRight,
+} from "lucide-react";
 import { ToolLayout } from "@/components/tools/ToolLayout";
 import { ChatMessage } from "@/components/tools/ChatMessage";
-import { ChatInput } from "@/components/tools/ChatInput";
 import { PlatformChips, PLATFORMS } from "@/components/tools/PlatformChips";
 import { ToneChips } from "@/components/tools/ToneChips";
 import { SocialPostCard } from "@/components/tools/SocialPostCard";
 import { CopyButton } from "@/components/tools/CopyButton";
 import { GenerationError } from "@/components/tools/GenerationError";
+import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   Select,
   SelectContent,
@@ -24,6 +39,7 @@ import {
 import { useStreaming } from "@/hooks/useStreaming";
 import { useAuth } from "@/hooks/useAuth";
 import { apiFetch } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 const DEFAULT_PLATFORM = "facebook";
 const DEFAULT_TONE = "Convivial";
@@ -34,16 +50,13 @@ const SUGGESTIONS = [
   "Promo week-end restaurant",
 ];
 
-type ChatMsg =
-  | { id: string; role: "user"; content: string }
-  | {
-      id: string;
-      role: "assistant";
-      content: string;
-      platform: string;
-      tone: string;
-      description: string;
-    };
+type PostResult = {
+  id: string;
+  content: string;
+  platform: string;
+  tone: string;
+  description: string;
+};
 
 type LastOutput = { content: string; description: string; platform: string; tone: string };
 
@@ -60,23 +73,22 @@ export default function SocialPostsPage() {
   const badgeLabel = tierBadge(profile?.current_tier);
   const [platform, setPlatform] = useState(DEFAULT_PLATFORM);
   const [tone, setTone] = useState(DEFAULT_TONE);
+  const [description, setDescription] = useState("");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [audience, setAudience] = useState("");
   const [keywords, setKeywords] = useState("");
   const [cta, setCta] = useState("");
-  const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [results, setResults] = useState<PostResult[]>([]);
   const [lastOutput, setLastOutput] = useState<LastOutput | null>(null);
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
-  const [inputValue, setInputValue] = useState("");
-  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const feedRef = useRef<HTMLDivElement>(null);
   const { text: output, isStreaming, error, isQuotaError, start, stop } = useStreaming();
 
-  const generationCount = messages.filter((m) => m.role === "assistant").length;
-
   useEffect(() => {
-    const el = scrollAreaRef.current;
+    const el = feedRef.current;
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior: isStreaming ? "auto" : "smooth" });
-  }, [messages, isStreaming, output]);
+  }, [results, isStreaming, output]);
 
   function buildPayload(overrides: {
     description: string;
@@ -109,11 +121,10 @@ export default function SocialPostsPage() {
         accumulated += t;
       },
     });
-    setMessages((prev) => [
+    setResults((prev) => [
       ...prev,
       {
         id: crypto.randomUUID(),
-        role: "assistant",
         content: accumulated,
         platform: resultPlatform,
         tone: resultTone,
@@ -128,35 +139,13 @@ export default function SocialPostsPage() {
     });
   }
 
-  async function handleSend(userText: string) {
-    setMessages((prev) => [
-      ...prev,
-      { id: crypto.randomUUID(), role: "user", content: userText },
-    ]);
-    if (lastOutput) {
-      await generate(
-        buildPayload({
-          description: lastOutput.description,
-          platform,
-          tone,
-          previousOutput: lastOutput.content,
-          refineInstruction: userText,
-        }),
-        platform,
-        tone,
-        lastOutput.description,
-      );
-    } else {
-      await generate(buildPayload({ description: userText, platform, tone }), platform, tone, userText);
-    }
+  async function handleGenerate() {
+    if (!description.trim() || isStreaming) return;
+    await generate(buildPayload({ description, platform, tone }), platform, tone, description);
   }
 
   async function handleRefinePreset(instruction: string) {
-    if (!lastOutput) return;
-    setMessages((prev) => [
-      ...prev,
-      { id: crypto.randomUUID(), role: "user", content: instruction },
-    ]);
+    if (!lastOutput || isStreaming) return;
     await generate(
       buildPayload({
         description: lastOutput.description,
@@ -171,67 +160,56 @@ export default function SocialPostsPage() {
     );
   }
 
-  async function handleRegenerate(msg: Extract<ChatMsg, { role: "assistant" }>) {
+  async function handleRegenerate(item: PostResult) {
     await generate(
-      buildPayload({ description: msg.description, platform: msg.platform, tone: msg.tone }),
-      msg.platform,
-      msg.tone,
-      msg.description,
+      buildPayload({ description: item.description, platform: item.platform, tone: item.tone }),
+      item.platform,
+      item.tone,
+      item.description,
     );
   }
 
-  async function handleAdapt(msg: Extract<ChatMsg, { role: "assistant" }>, newPlatform: string) {
+  async function handleAdapt(item: PostResult, newPlatform: string) {
     await generate(
-      buildPayload({ description: msg.description, platform: newPlatform, tone: msg.tone }),
+      buildPayload({ description: item.description, platform: newPlatform, tone: item.tone }),
       newPlatform,
-      msg.tone,
-      msg.description,
+      item.tone,
+      item.description,
     );
   }
 
-  async function handleSave(msg: Extract<ChatMsg, { role: "assistant" }>) {
-    if (savedIds.has(msg.id)) return;
+  async function handleSave(item: PostResult) {
+    if (savedIds.has(item.id)) return;
     try {
       const res = await apiFetch("/api/v1/tools/saved-generations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           tool: "social_posts",
-          content: msg.content,
-          metadata: { platform: msg.platform, tone: msg.tone },
+          content: item.content,
+          metadata: { platform: item.platform, tone: item.tone },
         }),
       });
       if (!res.ok) throw new Error();
-      setSavedIds((prev) => new Set(prev).add(msg.id));
+      setSavedIds((prev) => new Set(prev).add(item.id));
     } catch {
       toast.error("Impossible de sauvegarder ce post.");
     }
   }
 
   function handleDelete(id: string) {
-    const next = messages.filter((m) => m.id !== id);
-    setMessages(next);
-    const newLast = [...next].reverse().find((m) => m.role === "assistant");
-    setLastOutput(
-      newLast
-        ? {
-            content: newLast.content,
-            description: newLast.description,
-            platform: newLast.platform,
-            tone: newLast.tone,
-          }
-        : null,
-    );
+    const next = results.filter((r) => r.id !== id);
+    setResults(next);
+    const newLast = next.length > 0 ? next[next.length - 1] : null;
+    setLastOutput(newLast ? { ...newLast } : null);
   }
 
-  function handleNewConversation() {
-    setMessages([]);
+  function handleClearAll() {
+    setResults([]);
     setLastOutput(null);
-    setPlatform(DEFAULT_PLATFORM);
-    setTone(DEFAULT_TONE);
   }
 
-  const lastAssistantId = [...messages].reverse().find((m) => m.role === "assistant")?.id;
+  const lastResultId = results.length > 0 ? results[results.length - 1].id : undefined;
 
   return (
     <ToolLayout
@@ -243,67 +221,124 @@ export default function SocialPostsPage() {
         ) : undefined
       }
     >
-      <div className="flex min-h-0 flex-1 flex-col rounded-[12px] border bg-card">
-        <div className="flex flex-col gap-2.5 border-b bg-gray-50/50 p-3.5">
-          {messages.length > 0 && (
-            <div className="flex items-center justify-between gap-2">
-              <button
-                type="button"
-                onClick={handleNewConversation}
-                className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-bleu-boulga"
-                title="Nouvelle conversation"
-              >
-                <Plus className="size-3.5" />
-                Nouvelle conversation
-              </button>
-              {generationCount > 0 && (
-                <span className="text-xs text-muted-foreground">
-                  {generationCount} post{generationCount > 1 ? "s" : ""} généré
-                  {generationCount > 1 ? "s" : ""}
-                </span>
-              )}
-            </div>
-          )}
-          <PlatformChips value={platform} onChange={setPlatform} disabled={isStreaming} />
-          <ToneChips value={tone} onChange={setTone} disabled={isStreaming} />
+      <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row">
+        {/* Colonne gauche — options, fixe (ne defile pas avec le fil) */}
+        <div className="flex w-full flex-col gap-3 rounded-[12px] border bg-card p-4 lg:w-72 lg:shrink-0">
+          <div className="flex flex-col gap-1.5">
+            <Label>Plateforme</Label>
+            <PlatformChips value={platform} onChange={setPlatform} disabled={isStreaming} />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label>Ton</Label>
+            <ToneChips value={tone} onChange={setTone} disabled={isStreaming} />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="description">Que voulez-vous publier ?</Label>
+            <Textarea
+              id="description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Ex : On lance notre nouveau service de livraison à Ouagadougou..."
+              className="min-h-28"
+              disabled={isStreaming}
+            />
+          </div>
+
+          <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+            <CollapsibleTrigger className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+              <ChevronRight className={cn("size-3.5 transition-transform", advancedOpen && "rotate-90")} />
+              Options avancées
+            </CollapsibleTrigger>
+            <CollapsibleContent className="flex flex-col gap-3 pt-3">
+              <Input
+                value={audience}
+                onChange={(e) => setAudience(e.target.value)}
+                placeholder="Audience cible (optionnel)"
+                disabled={isStreaming}
+              />
+              <Input
+                value={keywords}
+                onChange={(e) => setKeywords(e.target.value)}
+                placeholder="Hashtags ou mots-clés (optionnel)"
+                disabled={isStreaming}
+              />
+              <Input
+                value={cta}
+                onChange={(e) => setCta(e.target.value)}
+                placeholder="Appel à l'action (optionnel)"
+                disabled={isStreaming}
+              />
+            </CollapsibleContent>
+          </Collapsible>
+
+          <div className="flex items-center gap-2">
+            <Button onClick={handleGenerate} disabled={isStreaming || !description.trim()}>
+              <Share2 className="size-4" />
+              {isStreaming ? "Génération..." : "Générer"}
+            </Button>
+            {isStreaming && (
+              <Button variant="outline" onClick={stop}>
+                <Square className="size-4" />
+                Arrêter
+              </Button>
+            )}
+          </div>
+          {error && <GenerationError message={error} isQuotaError={isQuotaError} onRetry={handleGenerate} />}
         </div>
 
-        <div ref={scrollAreaRef} className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
-          {messages.length === 0 ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
-              <Share2 className="size-12 text-muted-foreground/20" />
-              <p className="text-sm text-muted-foreground">
-                Décrivez ce que vous voulez publier, l&apos;IA génère un post adapté à la
-                plateforme choisie.
-              </p>
-              <div className="flex flex-wrap justify-center gap-2">
-                {SUGGESTIONS.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => setInputValue(s)}
-                    className="rounded-full bg-gray-100 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-200"
-                  >
-                    {s}
-                  </button>
-                ))}
+        {/* Colonne droite — fil des posts generes, defile independamment */}
+        <div className="flex min-h-0 flex-1 flex-col rounded-[12px] border bg-card">
+          <div className="flex items-center justify-between border-b bg-gray-50/50 p-3.5">
+            <span className="text-sm font-medium">Posts générés</span>
+            {results.length > 0 && (
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-muted-foreground">
+                  {results.length} post{results.length > 1 ? "s" : ""}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleClearAll}
+                  className="text-xs font-medium text-muted-foreground hover:text-destructive"
+                >
+                  Tout effacer
+                </button>
               </div>
-            </div>
-          ) : (
-            messages.map((m) =>
-              m.role === "user" ? (
-                <ChatMessage key={m.id} role="user">
-                  {m.content}
-                </ChatMessage>
-              ) : (
+            )}
+          </div>
+
+          <div ref={feedRef} className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+            {results.length === 0 && !isStreaming ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
+                <Share2 className="size-12 text-muted-foreground/20" />
+                <p className="text-sm text-muted-foreground">
+                  Décrivez ce que vous voulez publier à gauche, l&apos;IA génère un post adapté
+                  à la plateforme choisie.
+                </p>
+                <div className="flex flex-wrap justify-center gap-2">
+                  {SUGGESTIONS.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setDescription(s)}
+                      className="rounded-full bg-gray-100 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-200"
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              results.map((item) => (
                 <ChatMessage
-                  key={m.id}
+                  key={item.id}
                   role="assistant"
                   badge={badgeLabel}
                   actions={
                     <>
                       <CopyButton
-                        text={m.content}
+                        text={item.content}
                         label=""
                         copiedLabel=""
                         variant="outline"
@@ -315,7 +350,7 @@ export default function SocialPostsPage() {
                       <Button
                         variant="outline"
                         size="icon-sm"
-                        onClick={() => handleRegenerate(m)}
+                        onClick={() => handleRegenerate(item)}
                         disabled={isStreaming}
                         aria-label="Régénérer"
                         title="Régénérer"
@@ -325,7 +360,7 @@ export default function SocialPostsPage() {
                       <Select
                         value={undefined}
                         onValueChange={(value) =>
-                          typeof value === "string" && handleAdapt(m, value)
+                          typeof value === "string" && handleAdapt(item, value)
                         }
                         disabled={isStreaming}
                       >
@@ -339,7 +374,7 @@ export default function SocialPostsPage() {
                           <SelectValue placeholder="" />
                         </SelectTrigger>
                         <SelectContent>
-                          {PLATFORMS.filter((p) => p.value !== m.platform).map((p) => (
+                          {PLATFORMS.filter((p) => p.value !== item.platform).map((p) => (
                             <SelectItem key={p.value} value={p.value}>
                               <p.icon className="size-4" />
                               {p.label}
@@ -350,12 +385,12 @@ export default function SocialPostsPage() {
                       <Button
                         variant="outline"
                         size="icon-sm"
-                        onClick={() => handleSave(m)}
-                        disabled={savedIds.has(m.id)}
-                        aria-label={savedIds.has(m.id) ? "Sauvegardé" : "Sauvegarder"}
-                        title={savedIds.has(m.id) ? "Sauvegardé" : "Sauvegarder"}
+                        onClick={() => handleSave(item)}
+                        disabled={savedIds.has(item.id)}
+                        aria-label={savedIds.has(item.id) ? "Sauvegardé" : "Sauvegarder"}
+                        title={savedIds.has(item.id) ? "Sauvegardé" : "Sauvegarder"}
                       >
-                        {savedIds.has(m.id) ? (
+                        {savedIds.has(item.id) ? (
                           <BookmarkCheck className="size-3.5" />
                         ) : (
                           <Bookmark className="size-3.5" />
@@ -364,7 +399,7 @@ export default function SocialPostsPage() {
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        onClick={() => handleDelete(m.id)}
+                        onClick={() => handleDelete(item.id)}
                         disabled={isStreaming}
                         aria-label="Supprimer"
                         title="Supprimer"
@@ -375,8 +410,8 @@ export default function SocialPostsPage() {
                     </>
                   }
                 >
-                  <SocialPostCard content={m.content} platform={m.platform} />
-                  {m.id === lastAssistantId && !isStreaming && (
+                  <SocialPostCard content={item.content} platform={item.platform} />
+                  {item.id === lastResultId && !isStreaming && (
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {REFINE_PRESETS.map((preset) => (
                         <button
@@ -391,44 +426,15 @@ export default function SocialPostsPage() {
                     </div>
                   )}
                 </ChatMessage>
-              ),
-            )
-          )}
-          {isStreaming && (
-            <ChatMessage role="assistant" badge={badgeLabel} isStreaming>
-              <SocialPostCard content={output} platform={platform} isStreaming />
-            </ChatMessage>
-          )}
-          {error && <GenerationError message={error} isQuotaError={isQuotaError} />}
+              ))
+            )}
+            {isStreaming && (
+              <ChatMessage role="assistant" badge={badgeLabel} isStreaming>
+                <SocialPostCard content={output} platform={platform} isStreaming />
+              </ChatMessage>
+            )}
+          </div>
         </div>
-
-        <ChatInput
-          onSend={handleSend}
-          value={inputValue}
-          onValueChange={setInputValue}
-          placeholder="Décrivez ce que vous voulez publier..."
-          isStreaming={isStreaming}
-          onStop={stop}
-          settingsSlot={
-            <div className="flex flex-col gap-2">
-              <Input
-                value={audience}
-                onChange={(e) => setAudience(e.target.value)}
-                placeholder="Audience cible (optionnel)"
-              />
-              <Input
-                value={keywords}
-                onChange={(e) => setKeywords(e.target.value)}
-                placeholder="Hashtags ou mots-clés (optionnel)"
-              />
-              <Input
-                value={cta}
-                onChange={(e) => setCta(e.target.value)}
-                placeholder="Appel à l'action (optionnel)"
-              />
-            </div>
-          }
-        />
       </div>
     </ToolLayout>
   );
