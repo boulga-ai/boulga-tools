@@ -2,7 +2,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { RotateCcw, Bookmark, Plus } from "lucide-react";
+import { toast } from "sonner";
+import { RotateCcw, Bookmark, BookmarkCheck, Plus } from "lucide-react";
 import { ToolLayout } from "@/components/tools/ToolLayout";
 import { ChatMessage } from "@/components/tools/ChatMessage";
 import { ChatInput } from "@/components/tools/ChatInput";
@@ -22,6 +23,7 @@ import {
 } from "@/components/ui/select";
 import { useStreaming } from "@/hooks/useStreaming";
 import { useAuth } from "@/hooks/useAuth";
+import { apiFetch } from "@/lib/api";
 
 const DEFAULT_PLATFORM = "facebook";
 const DEFAULT_TONE = "Convivial";
@@ -58,6 +60,7 @@ export default function SocialPostsPage() {
   const [cta, setCta] = useState("");
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [lastOutput, setLastOutput] = useState<LastOutput | null>(null);
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const { text: output, isStreaming, error, isQuotaError, start, stop } = useStreaming();
 
@@ -180,6 +183,25 @@ export default function SocialPostsPage() {
     );
   }
 
+  async function handleSave(msg: Extract<ChatMsg, { role: "assistant" }>) {
+    if (savedIds.has(msg.id)) return;
+    try {
+      const res = await apiFetch("/api/v1/tools/saved-generations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tool: "social_posts",
+          content: msg.content,
+          metadata: { platform: msg.platform, tone: msg.tone },
+        }),
+      });
+      if (!res.ok) throw new Error();
+      setSavedIds((prev) => new Set(prev).add(msg.id));
+    } catch {
+      toast.error("Impossible de sauvegarder ce post.");
+    }
+  }
+
   function handleNewConversation() {
     setMessages([]);
     setLastOutput(null);
@@ -277,9 +299,19 @@ export default function SocialPostsPage() {
                           ))}
                         </SelectContent>
                       </Select>
-                      <Button variant="outline" size="sm" disabled>
-                        <Bookmark className="size-3.5" />
-                        Sauvegarder
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleSave(m)}
+                        disabled={savedIds.has(m.id)}
+                        title={savedIds.has(m.id) ? "Sauvegardé" : undefined}
+                      >
+                        {savedIds.has(m.id) ? (
+                          <BookmarkCheck className="size-3.5" />
+                        ) : (
+                          <Bookmark className="size-3.5" />
+                        )}
+                        {savedIds.has(m.id) ? "Sauvegardé" : "Sauvegarder"}
                       </Button>
                     </>
                   }
