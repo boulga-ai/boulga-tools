@@ -235,8 +235,6 @@ export default function SocialPostsPage() {
 
   return (
     <ToolLayout
-      title="Posts réseaux sociaux"
-      description="Génère des publications adaptées à chaque réseau social."
       badge={
         profile?.current_tier === "introduction" || !profile ? (
           <span className="w-fit rounded-[4px] bg-succes/10 px-2 py-0.5 text-xs font-medium text-succes">
