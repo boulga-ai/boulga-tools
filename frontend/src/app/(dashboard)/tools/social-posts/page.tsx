@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useStreaming } from "@/hooks/useStreaming";
+import { useAuth } from "@/hooks/useAuth";
 
 const DEFAULT_PLATFORM = "facebook";
 const DEFAULT_TONE = "Convivial";
@@ -39,7 +40,17 @@ type ChatMsg =
 
 type LastOutput = { content: string; description: string; platform: string; tone: string };
 
+function tierBadge(tier: string | undefined): string | undefined {
+  if (tier === "ocean" || tier === "fleuve") return "Expert ✦";
+  if (tier === "source") return "Avancé";
+  if (tier === "goutte") return "Pro";
+  if (tier === "introduction") return "Standard";
+  return undefined;
+}
+
 export default function SocialPostsPage() {
+  const { profile } = useAuth();
+  const badgeLabel = tierBadge(profile?.current_tier);
   const [platform, setPlatform] = useState(DEFAULT_PLATFORM);
   const [tone, setTone] = useState(DEFAULT_TONE);
   const [audience, setAudience] = useState("");
@@ -183,9 +194,11 @@ export default function SocialPostsPage() {
       title="Posts réseaux sociaux"
       description="Génère des publications adaptées à chaque réseau social."
       badge={
-        <span className="w-fit rounded-[4px] bg-succes/10 px-2 py-0.5 text-xs font-medium text-succes">
-          Gratuit
-        </span>
+        profile?.current_tier === "introduction" || !profile ? (
+          <span className="w-fit rounded-[4px] bg-succes/10 px-2 py-0.5 text-xs font-medium text-succes">
+            Gratuit
+          </span>
+        ) : undefined
       }
     >
       <div className="flex flex-1 flex-col rounded-[12px] border bg-card">
@@ -232,6 +245,7 @@ export default function SocialPostsPage() {
                 <ChatMessage
                   key={m.id}
                   role="assistant"
+                  badge={badgeLabel}
                   actions={
                     <>
                       <CopyButton text={m.content} variant="outline" size="sm" disabled={isStreaming} />
@@ -290,7 +304,7 @@ export default function SocialPostsPage() {
             )
           )}
           {isStreaming && (
-            <ChatMessage role="assistant" isStreaming>
+            <ChatMessage role="assistant" badge={badgeLabel} isStreaming>
               <SocialPostCard content={output} platform={platform} isStreaming />
             </ChatMessage>
           )}
