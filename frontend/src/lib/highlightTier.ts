@@ -1,3 +1,4 @@
+// frontend/src/lib/highlightTier.ts
 export type HighlightTier = "light" | "strong" | null;
 
 // Memes seuils que lib/confidence.ts (40/70) — un score bas ne doit generer aucun
