@@ -2,8 +2,9 @@
 "use client";
 
 import { useState } from "react";
-import { Mic, RotateCcw, Minus, Plus, ChevronRight, Square } from "lucide-react";
+import { RotateCcw, Minus, Plus } from "lucide-react";
 import { ToolLayout } from "@/components/tools/ToolLayout";
+import { ChatInput } from "@/components/tools/ChatInput";
 import { StreamingOutput } from "@/components/tools/StreamingOutput";
 import { CopyButton } from "@/components/tools/CopyButton";
 import { GenerationError } from "@/components/tools/GenerationError";
@@ -13,11 +14,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -26,7 +22,6 @@ import {
 } from "@/components/ui/select";
 import { useAuth } from "@/hooks/useAuth";
 import { useStreaming } from "@/hooks/useStreaming";
-import { cn } from "@/lib/utils";
 
 const SPEECH_TYPES: { value: string; label: string; placeholder: string }[] = [
   {
@@ -69,7 +64,6 @@ export default function SpeechWriterPage() {
   const [description, setDescription] = useState("");
   const [duration, setDuration] = useState("5 min");
   const [tone, setTone] = useState("Professionnel");
-  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [keyPoints, setKeyPoints] = useState("");
   const [audienceInfo, setAudienceInfo] = useState("");
   const { text: output, isStreaming, error, isQuotaError, start, stop } = useStreaming();
@@ -82,11 +76,11 @@ export default function SpeechWriterPage() {
     ? Math.max(1, Math.round(output.trim().split(/\s+/).length / 130))
     : null;
 
-  async function generate(overrideDuration?: string) {
-    if (!canSubmit) return;
+  async function generate(text: string, overrideDuration?: string) {
+    if (!text.trim() || !available) return;
     await start("/api/v1/tools/transformers/speech-writer", {
       speech_type: speechType,
-      description,
+      description: text,
       duration: overrideDuration ?? duration,
       tone,
       key_points: keyPoints || undefined,
@@ -95,7 +89,7 @@ export default function SpeechWriterPage() {
   }
 
   async function handleRefine(instruction: string) {
-    if (!canSubmit) return;
+    if (!description.trim() || !available) return;
     await start("/api/v1/tools/transformers/speech-writer", {
       speech_type: speechType,
       description,
@@ -114,7 +108,7 @@ export default function SpeechWriterPage() {
       direction === "shorter" ? Math.max(0, idx - 1) : Math.min(DURATIONS.length - 1, idx + 1);
     const nextDuration = DURATIONS[nextIdx];
     setDuration(nextDuration);
-    generate(nextDuration);
+    generate(description, nextDuration);
   }
 
   return (
@@ -145,17 +139,6 @@ export default function SpeechWriterPage() {
                 ))}
               </SelectContent>
             </Select>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="description">Décrivez votre discours</Label>
-            <Textarea
-              id="description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder={currentPlaceholder}
-              className="min-h-28"
-            />
           </div>
 
           <div className="flex gap-3">
@@ -191,44 +174,34 @@ export default function SpeechWriterPage() {
             </div>
           </div>
 
-          <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
-            <CollapsibleTrigger className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-              <ChevronRight className={cn("size-3.5 transition-transform", advancedOpen && "rotate-90")} />
-              Options avancées
-            </CollapsibleTrigger>
-            <CollapsibleContent className="flex flex-col gap-3 pt-3">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="keyPoints">Points spécifiques à couvrir (optionnel)</Label>
-                <Textarea
-                  id="keyPoints"
-                  value={keyPoints}
-                  onChange={(e) => setKeyPoints(e.target.value)}
-                  className="min-h-16"
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="audienceInfo">Informations sur l&apos;audience (optionnel)</Label>
-                <Input
-                  id="audienceInfo"
-                  value={audienceInfo}
-                  onChange={(e) => setAudienceInfo(e.target.value)}
-                  placeholder="20 investisseurs, profils tech et finance..."
-                />
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
-
-          <div className="flex items-center gap-2">
-            <Button onClick={() => generate()} disabled={isStreaming || !canSubmit} className="w-fit">
-              <Mic className="size-4" />
-              {isStreaming ? "Rédaction en cours..." : "Rédiger le discours"}
-            </Button>
-            {isStreaming && (
-              <Button variant="outline" onClick={stop} className="w-fit">
-                <Square className="size-4" />
-                Arrêter
-              </Button>
-            )}
+          <div className="flex flex-col gap-1.5">
+            <Label>Décrivez votre discours</Label>
+            <ChatInput
+              onSend={generate}
+              value={description}
+              onValueChange={setDescription}
+              placeholder={currentPlaceholder}
+              isStreaming={isStreaming}
+              onStop={stop}
+              disabled={!available}
+              clearOnSend={false}
+              className="static shadow-none"
+              settingsSlot={
+                <div className="flex flex-col gap-2">
+                  <Textarea
+                    value={keyPoints}
+                    onChange={(e) => setKeyPoints(e.target.value)}
+                    placeholder="Points spécifiques à couvrir (optionnel)"
+                    className="min-h-16"
+                  />
+                  <Input
+                    value={audienceInfo}
+                    onChange={(e) => setAudienceInfo(e.target.value)}
+                    placeholder="Audience (ex : 20 investisseurs, profils tech et finance...)"
+                  />
+                </div>
+              }
+            />
           </div>
           {!available && (
             <p className="text-sm text-muted-foreground">
@@ -239,7 +212,13 @@ export default function SpeechWriterPage() {
 
         <div className="flex flex-col gap-3">
           <StreamingOutput text={output} isStreaming={isStreaming} />
-          {error && <GenerationError message={error} isQuotaError={isQuotaError} onRetry={() => generate()} />}
+          {error && (
+            <GenerationError
+              message={error}
+              isQuotaError={isQuotaError}
+              onRetry={() => generate(description)}
+            />
+          )}
           {estimatedMinutes !== null && !isStreaming && (
             <p className="text-sm text-muted-foreground">
               Durée estimée de lecture : environ {estimatedMinutes} min
@@ -247,7 +226,7 @@ export default function SpeechWriterPage() {
           )}
           <div className="flex flex-wrap gap-2">
             <CopyButton text={output} label="Copier le discours" disabled={isStreaming} />
-            <Button variant="outline" onClick={() => generate()} disabled={isStreaming || !canSubmit}>
+            <Button variant="outline" onClick={() => generate(description)} disabled={isStreaming || !canSubmit}>
               <RotateCcw className="size-4" />
               Régénérer
             </Button>
