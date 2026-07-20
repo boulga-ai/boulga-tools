@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import dynamic from "next/dynamic";
 import { toast } from "sonner";
 import {
@@ -9,7 +9,6 @@ import {
   Scissors,
   FileText,
   Trash2,
-  Download,
   Loader2,
   GripVertical,
   Minimize2,
@@ -64,6 +63,31 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
 }
 
+// Fil de resultats cumules persiste en sessionStorage, une cle par onglet — restaure au
+// montage, sauvegarde a chaque changement. Les liens expirent avec le lien signe (24h),
+// pas besoin de nettoyage particulier.
+function useSessionResults<T>(key: string): [T[], Dispatch<SetStateAction<T[]>>] {
+  const [state, setState] = useState<T[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = sessionStorage.getItem(key);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(key, JSON.stringify(state));
+    } catch {
+      // quota depasse ou sessionStorage indisponible : pas bloquant
+    }
+  }, [key, state]);
+
+  return [state, setState];
+}
+
 function outputFormatsFor(filename: string): string[] {
   const ext = extOf(filename);
   if (IMAGE_EXTS.includes(ext)) {
@@ -85,7 +109,7 @@ export default function ConverterPage() {
       }
     >
       <Tabs defaultValue="convert" className="flex-1">
-        <TabsList>
+        <TabsList className="max-w-full overflow-x-auto">
           <TabsTrigger value="convert">Convertir</TabsTrigger>
           <TabsTrigger value="compress">Compresser</TabsTrigger>
           <TabsTrigger value="merge">Fusionner PDF</TabsTrigger>
@@ -117,17 +141,6 @@ export default function ConverterPage() {
   );
 }
 
-function ResultDownload({ url, filename }: { url: string; filename: string }) {
-  return (
-    <a href={url} download={filename} target="_blank" rel="noreferrer">
-      <Button variant="outline" className="w-fit">
-        <Download className="size-4" />
-        Télécharger {filename}
-      </Button>
-    </a>
-  );
-}
-
 type QueuedFile = { id: string; file: File; outputFormat: string };
 type ConversionResult = { id: string; filename: string; url: string };
 
@@ -135,7 +148,9 @@ function ConvertTab() {
   const [queue, setQueue] = useState<QueuedFile[]>([]);
   const [converting, setConverting] = useState(false);
   const [convertingId, setConvertingId] = useState<string | null>(null);
-  const [results, setResults] = useState<ConversionResult[]>([]);
+  const [results, setResults] = useSessionResults<ConversionResult>(
+    "boulga:converter:convert-results",
+  );
 
   function handleFiles(files: FileList) {
     const newItems = Array.from(files).map((f) => ({
@@ -272,7 +287,9 @@ function CompressTab() {
   const [queue, setQueue] = useState<CompressQueueItem[]>([]);
   const [compressing, setCompressing] = useState(false);
   const [compressingId, setCompressingId] = useState<string | null>(null);
-  const [results, setResults] = useState<CompressResult[]>([]);
+  const [results, setResults] = useSessionResults<CompressResult>(
+    "boulga:converter:compress-results",
+  );
 
   function handleFiles(files: FileList) {
     const pdfsOnly = Array.from(files).filter((f) => extOf(f.name) === "pdf");
@@ -411,10 +428,12 @@ function CompressTab() {
   );
 }
 
+type MergeResult = { id: string; filename: string; url: string };
+
 function MergeTab() {
   const [files, setFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ url: string; filename: string } | null>(null);
+  const [results, setResults] = useSessionResults<MergeResult>("boulga:converter:merge-results");
   const dragIndex = useRef(-1);
 
   function addFiles(newFiles: FileList) {
@@ -423,7 +442,6 @@ function MergeTab() {
       toast.error("Seuls les fichiers PDF sont acceptés pour la fusion.");
     }
     setFiles((prev) => [...prev, ...pdfsOnly]);
-    setResult(null);
   }
 
   function removeFile(index: number) {
@@ -439,10 +457,13 @@ function MergeTab() {
     });
   }
 
+  function removeResult(id: string) {
+    setResults((prev) => prev.filter((r) => r.id !== id));
+  }
+
   async function handleMerge() {
     if (files.length < 2) return;
     setLoading(true);
-    setResult(null);
     try {
       const formData = new FormData();
       files.forEach((f) => formData.append("files", f));
@@ -454,7 +475,9 @@ function MergeTab() {
         const body = await res.json().catch(() => null);
         throw new Error(body?.detail ?? "Échec de la fusion.");
       }
-      setResult(await res.json());
+      const result: { url: string; filename: string } = await res.json();
+      setResults((prev) => [...prev, { id: crypto.randomUUID(), ...result }]);
+      setFiles([]);
     } catch (err) {
       toast.error("Fusion impossible", { description: (err as Error).message });
     } finally {
@@ -497,17 +520,31 @@ function MergeTab() {
           {loading ? <Loader2 className="size-4 animate-spin" /> : <Merge className="size-4" />}
           {loading ? "Fusion en cours..." : "Fusionner"}
         </Button>
-        {result && <ResultDownload {...result} />}
       </div>
+
+      {results.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {results.map((r) => (
+            <ConversionResultCard
+              key={r.id}
+              filename={r.filename}
+              url={r.url}
+              onDelete={() => removeResult(r.id)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
+
+type SplitResult = { id: string; filename: string; url: string };
 
 function SplitTab() {
   const [file, setFile] = useState<File | null>(null);
   const [pages, setPages] = useState("");
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ url: string; filename: string } | null>(null);
+  const [results, setResults] = useSessionResults<SplitResult>("boulga:converter:split-results");
 
   function handleFiles(files: FileList) {
     const f = files[0];
@@ -516,13 +553,15 @@ function SplitTab() {
       return;
     }
     setFile(f);
-    setResult(null);
+  }
+
+  function removeResult(id: string) {
+    setResults((prev) => prev.filter((r) => r.id !== id));
   }
 
   async function handleSplit() {
     if (!file || !pages.trim()) return;
     setLoading(true);
-    setResult(null);
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -534,7 +573,8 @@ function SplitTab() {
         const body = await res.json().catch(() => null);
         throw new Error(body?.detail ?? "Échec de l'extraction.");
       }
-      setResult(await res.json());
+      const result: { url: string; filename: string } = await res.json();
+      setResults((prev) => [...prev, { id: crypto.randomUUID(), ...result }]);
     } catch (err) {
       toast.error("Extraction impossible", { description: (err as Error).message });
     } finally {
@@ -572,8 +612,20 @@ function SplitTab() {
           {loading ? <Loader2 className="size-4 animate-spin" /> : <Scissors className="size-4" />}
           {loading ? "Extraction en cours..." : "Extraire"}
         </Button>
-        {result && <ResultDownload {...result} />}
       </div>
+
+      {results.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {results.map((r) => (
+            <ConversionResultCard
+              key={r.id}
+              filename={r.filename}
+              url={r.url}
+              onDelete={() => removeResult(r.id)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -584,7 +636,9 @@ function OrganizeTab() {
   const [file, setFile] = useState<File | null>(null);
   const [operations, setOperations] = useState<PageOperation[]>([]);
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState<OrganizeResult[]>([]);
+  const [results, setResults] = useSessionResults<OrganizeResult>(
+    "boulga:converter:organize-results",
+  );
 
   function handleFiles(files: FileList) {
     const f = files[0];
@@ -665,7 +719,9 @@ function ProtectTab() {
   const [file, setFile] = useState<File | null>(null);
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState<ProtectResult[]>([]);
+  const [results, setResults] = useSessionResults<ProtectResult>(
+    "boulga:converter:protect-results",
+  );
 
   function handleFiles(files: FileList) {
     const f = files[0];
