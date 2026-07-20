@@ -11,6 +11,7 @@ import {
   Download,
   Loader2,
   GripVertical,
+  Minimize2,
 } from "lucide-react";
 import { ToolLayout } from "@/components/tools/ToolLayout";
 import { DropZone } from "@/components/tools/DropZone";
@@ -76,12 +77,16 @@ export default function ConverterPage() {
       <Tabs defaultValue="convert" className="flex-1">
         <TabsList>
           <TabsTrigger value="convert">Convertir</TabsTrigger>
+          <TabsTrigger value="compress">Compresser</TabsTrigger>
           <TabsTrigger value="merge">Fusionner PDF</TabsTrigger>
           <TabsTrigger value="split">Séparer PDF</TabsTrigger>
         </TabsList>
 
         <TabsContent value="convert">
           <ConvertTab />
+        </TabsContent>
+        <TabsContent value="compress">
+          <CompressTab />
         </TabsContent>
         <TabsContent value="merge">
           <MergeTab />
@@ -227,6 +232,157 @@ function ConvertTab() {
             <ConversionResultCard
               key={r.id}
               filename={r.filename}
+              url={r.url}
+              onDelete={() => removeResult(r.id)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatCompressionInfo(before: number, after: number): string {
+  const pct = before > 0 ? Math.round((1 - after / before) * 100) : 0;
+  return `${formatSize(before)} → ${formatSize(after)} (${pct >= 0 ? "-" : "+"}${Math.abs(pct)}%)`;
+}
+
+type CompressQueueItem = { id: string; file: File; level: "leger" | "fort" };
+type CompressResult = { id: string; filename: string; url: string; compressionInfo: string };
+
+function CompressTab() {
+  const [queue, setQueue] = useState<CompressQueueItem[]>([]);
+  const [compressing, setCompressing] = useState(false);
+  const [compressingId, setCompressingId] = useState<string | null>(null);
+  const [results, setResults] = useState<CompressResult[]>([]);
+
+  function handleFiles(files: FileList) {
+    const pdfsOnly = Array.from(files).filter((f) => extOf(f.name) === "pdf");
+    if (pdfsOnly.length !== files.length) {
+      toast.error("Seuls les fichiers PDF sont acceptés pour la compression.");
+    }
+    setQueue((prev) => [
+      ...prev,
+      ...pdfsOnly.map((f) => ({ id: crypto.randomUUID(), file: f, level: "leger" as const })),
+    ]);
+  }
+
+  function removeQueued(id: string) {
+    setQueue((prev) => prev.filter((q) => q.id !== id));
+  }
+
+  function updateLevel(id: string, level: "leger" | "fort") {
+    setQueue((prev) => prev.map((q) => (q.id === id ? { ...q, level } : q)));
+  }
+
+  function removeResult(id: string) {
+    setResults((prev) => prev.filter((r) => r.id !== id));
+  }
+
+  async function handleCompressAll() {
+    setCompressing(true);
+    for (const item of queue) {
+      setCompressingId(item.id);
+      try {
+        const formData = new FormData();
+        formData.append("file", item.file);
+        const res = await apiFetch(`/api/v1/tools/converter/compress?level=${item.level}`, {
+          method: "POST",
+          body: formData,
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => null);
+          throw new Error(body?.detail ?? "Échec de la compression.");
+        }
+        const result: { url: string; filename: string; size_before: number; size_after: number } =
+          await res.json();
+        setResults((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            filename: result.filename,
+            url: result.url,
+            compressionInfo: formatCompressionInfo(result.size_before, result.size_after),
+          },
+        ]);
+        setQueue((prev) => prev.filter((q) => q.id !== item.id));
+      } catch (err) {
+        toast.error(`Compression impossible : ${item.file.name}`, {
+          description: (err as Error).message,
+        });
+      }
+    }
+    setCompressingId(null);
+    setCompressing(false);
+  }
+
+  return (
+    <div className="flex flex-col gap-4 pt-4">
+      <DropZone
+        onFiles={handleFiles}
+        multiple
+        accept="application/pdf"
+        label="Glissez-déposez des PDF, ou"
+      />
+
+      {queue.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          {queue.map((item) => (
+            <div
+              key={item.id}
+              className="flex items-center gap-3 rounded-[8px] border bg-card p-3"
+            >
+              {compressingId === item.id ? (
+                <Loader2 className="size-5 shrink-0 animate-spin text-muted-foreground" />
+              ) : (
+                <FileText className="size-5 shrink-0 text-muted-foreground" />
+              )}
+              <div className="flex-1 truncate text-sm">
+                <p className="truncate font-medium">{item.file.name}</p>
+                <p className="text-muted-foreground">{formatSize(item.file.size)}</p>
+              </div>
+              <Select
+                value={item.level}
+                onValueChange={(v) => v && updateLevel(item.id, v as "leger" | "fort")}
+                disabled={compressing}
+              >
+                <SelectTrigger className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="leger">Légère</SelectItem>
+                  <SelectItem value="fort">Forte</SelectItem>
+                </SelectContent>
+              </Select>
+              <button
+                type="button"
+                onClick={() => removeQueued(item.id)}
+                disabled={compressing}
+                className="shrink-0 text-muted-foreground hover:text-erreur disabled:opacity-50"
+              >
+                <Trash2 className="size-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center gap-3">
+        <Button onClick={handleCompressAll} disabled={queue.length === 0 || compressing} className="w-fit">
+          {compressing ? <Loader2 className="size-4 animate-spin" /> : <Minimize2 className="size-4" />}
+          {compressing
+            ? "Compression en cours..."
+            : `Compresser${queue.length > 1 ? ` (${queue.length})` : ""}`}
+        </Button>
+      </div>
+
+      {results.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {results.map((r) => (
+            <ConversionResultCard
+              key={r.id}
+              filename={r.filename}
+              compressionInfo={r.compressionInfo}
               url={r.url}
               onDelete={() => removeResult(r.id)}
             />
