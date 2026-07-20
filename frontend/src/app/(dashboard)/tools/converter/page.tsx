@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { toast } from "sonner";
 import {
   ArrowRightLeft,
@@ -12,10 +13,12 @@ import {
   Loader2,
   GripVertical,
   Minimize2,
+  LayoutGrid,
 } from "lucide-react";
 import { ToolLayout } from "@/components/tools/ToolLayout";
 import { DropZone } from "@/components/tools/DropZone";
 import { ConversionResultCard } from "@/components/tools/ConversionResultCard";
+import type { PageOperation } from "@/components/tools/PdfPageThumbnails";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,6 +31,13 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiFetch } from "@/lib/api";
+
+// pdfjs-dist touche des API navigateur (Worker, DOMMatrix...) absentes cote serveur —
+// meme convention que PdfViewer.tsx.
+const PdfPageThumbnails = dynamic(
+  () => import("@/components/tools/PdfPageThumbnails").then((m) => m.PdfPageThumbnails),
+  { ssr: false },
+);
 
 const IMAGE_EXTS = ["png", "jpg", "jpeg", "webp", "bmp", "gif"];
 const OFFICE_TO_PDF: Record<string, string[]> = {
@@ -80,6 +90,7 @@ export default function ConverterPage() {
           <TabsTrigger value="compress">Compresser</TabsTrigger>
           <TabsTrigger value="merge">Fusionner PDF</TabsTrigger>
           <TabsTrigger value="split">Séparer PDF</TabsTrigger>
+          <TabsTrigger value="organize">Organiser</TabsTrigger>
         </TabsList>
 
         <TabsContent value="convert">
@@ -87,6 +98,9 @@ export default function ConverterPage() {
         </TabsContent>
         <TabsContent value="compress">
           <CompressTab />
+        </TabsContent>
+        <TabsContent value="organize">
+          <OrganizeTab />
         </TabsContent>
         <TabsContent value="merge">
           <MergeTab />
@@ -556,6 +570,85 @@ function SplitTab() {
         </Button>
         {result && <ResultDownload {...result} />}
       </div>
+    </div>
+  );
+}
+
+type OrganizeResult = { id: string; filename: string; url: string };
+
+function OrganizeTab() {
+  const [file, setFile] = useState<File | null>(null);
+  const [operations, setOperations] = useState<PageOperation[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState<OrganizeResult[]>([]);
+
+  function handleFiles(files: FileList) {
+    const f = files[0];
+    if (extOf(f.name) !== "pdf") {
+      toast.error("Seul un fichier PDF peut être organisé.");
+      return;
+    }
+    setFile(f);
+    setOperations([]);
+  }
+
+  function removeResult(id: string) {
+    setResults((prev) => prev.filter((r) => r.id !== id));
+  }
+
+  async function handleApply() {
+    if (!file || operations.length === 0) return;
+    setLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("operations", JSON.stringify(operations));
+      const res = await apiFetch("/api/v1/tools/converter/organize", {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.detail ?? "Échec de l'organisation.");
+      }
+      const result: { url: string; filename: string } = await res.json();
+      setResults((prev) => [...prev, { id: crypto.randomUUID(), ...result }]);
+    } catch (err) {
+      toast.error("Organisation impossible", { description: (err as Error).message });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4 pt-4">
+      <DropZone onFiles={handleFiles} accept="application/pdf" label="Glissez-déposez un PDF, ou" />
+
+      {file && (
+        <PdfPageThumbnails file={file} onOperationsChange={setOperations} />
+      )}
+
+      {file && (
+        <div className="flex items-center gap-3">
+          <Button onClick={handleApply} disabled={operations.length === 0 || loading} className="w-fit">
+            {loading ? <Loader2 className="size-4 animate-spin" /> : <LayoutGrid className="size-4" />}
+            {loading ? "Application en cours..." : "Appliquer"}
+          </Button>
+        </div>
+      )}
+
+      {results.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {results.map((r) => (
+            <ConversionResultCard
+              key={r.id}
+              filename={r.filename}
+              url={r.url}
+              onDelete={() => removeResult(r.id)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
