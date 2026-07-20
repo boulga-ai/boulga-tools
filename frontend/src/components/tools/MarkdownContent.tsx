@@ -2,29 +2,32 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/utils";
 
-const components: Components = {
+function buildComponents(dense: boolean): Components {
+  const blockGap = dense ? "mb-1.5" : "mb-3";
+  const leading = dense ? "leading-normal" : "leading-relaxed";
+  return {
   h1: ({ className, ...props }) => (
-    <h1 className={cn("mt-4 mb-2 text-marine first:mt-0", className)} {...props} />
+    <h1 className={cn(dense ? "mt-2.5 mb-1.5" : "mt-4 mb-2", "text-marine first:mt-0", className)} {...props} />
   ),
   h2: ({ className, ...props }) => (
-    <h2 className={cn("mt-4 mb-2 text-marine first:mt-0", className)} {...props} />
+    <h2 className={cn(dense ? "mt-2.5 mb-1.5" : "mt-4 mb-2", "text-marine first:mt-0", className)} {...props} />
   ),
   h3: ({ className, ...props }) => (
-    <h3 className={cn("mt-3 mb-1.5 text-marine first:mt-0", className)} {...props} />
+    <h3 className={cn(dense ? "mt-2 mb-1" : "mt-3 mb-1.5", "text-marine first:mt-0", className)} {...props} />
   ),
   p: ({ className, ...props }) => (
-    <p className={cn("mb-3 leading-relaxed last:mb-0", className)} {...props} />
+    <p className={cn(blockGap, leading, "last:mb-0", className)} {...props} />
   ),
   strong: ({ className, ...props }) => (
     <strong className={cn("font-semibold text-foreground", className)} {...props} />
   ),
   ul: ({ className, ...props }) => (
-    <ul className={cn("mb-3 list-disc space-y-1 pl-5", className)} {...props} />
+    <ul className={cn(blockGap, "list-disc space-y-1 pl-5", className)} {...props} />
   ),
   ol: ({ className, ...props }) => (
-    <ol className={cn("mb-3 list-decimal space-y-1 pl-5", className)} {...props} />
+    <ol className={cn(blockGap, "list-decimal space-y-1 pl-5", className)} {...props} />
   ),
-  li: ({ className, ...props }) => <li className={cn("leading-relaxed", className)} {...props} />,
+  li: ({ className, ...props }) => <li className={cn(leading, className)} {...props} />,
   a: ({ className, ...props }) => (
     <a
       className={cn("text-bleu-boulga underline-offset-2 hover:underline", className)}
@@ -53,18 +56,18 @@ const components: Components = {
   },
   pre: ({ className, ...props }) => (
     <pre
-      className={cn("mb-3 overflow-x-auto rounded-[8px] bg-[#F2F4F7] p-3 font-mono text-xs", className)}
+      className={cn(blockGap, "overflow-x-auto rounded-[8px] bg-[#F2F4F7] p-3 font-mono text-xs", className)}
       {...props}
     />
   ),
   blockquote: ({ className, ...props }) => (
     <blockquote
-      className={cn("mb-3 border-l-2 border-border pl-3 italic text-muted-foreground", className)}
+      className={cn(blockGap, "border-l-2 border-border pl-3 italic text-muted-foreground", className)}
       {...props}
     />
   ),
   table: ({ className, ...props }) => (
-    <div className="mb-3 overflow-x-auto">
+    <div className={cn(blockGap, "overflow-x-auto")}>
       <table className={cn("w-full border-collapse text-sm", className)} {...props} />
     </div>
   ),
@@ -74,12 +77,24 @@ const components: Components = {
   td: ({ className, ...props }) => (
     <td className={cn("border-b border-border px-2 py-1.5", className)} {...props} />
   ),
-};
+  };
+}
 
-export function MarkdownContent({ text, className }: { text: string; className?: string }) {
+const componentsNormal = buildComponents(false);
+const componentsDense = buildComponents(true);
+
+export function MarkdownContent({
+  text,
+  className,
+  dense,
+}: {
+  text: string;
+  className?: string;
+  dense?: boolean;
+}) {
   return (
     <div className={cn("text-sm", className)}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={dense ? componentsDense : componentsNormal}>
         {text}
       </ReactMarkdown>
     </div>

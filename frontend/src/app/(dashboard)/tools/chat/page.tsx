@@ -225,7 +225,7 @@ export default function ChatPage() {
                 </div>
               ) : (
                 <div key={i} className="group flex w-full flex-col gap-1">
-                  <MarkdownContent text={m.content} />
+                  <MarkdownContent text={m.content} dense />
                   <CopyButton
                     text={m.content}
                     label="Copier"
@@ -239,7 +239,7 @@ export default function ChatPage() {
 
             {isStreaming && (
               <div className="w-full text-sm">
-                <MarkdownContent text={text} />
+                <MarkdownContent text={text} dense />
                 <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-bleu-boulga align-text-bottom" />
               </div>
             )}
