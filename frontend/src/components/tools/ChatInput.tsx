@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { Send, Square, Settings2 } from "lucide-react";
+import { ArrowUp, Square, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -116,7 +116,7 @@ export function ChatInput({
               aria-label="Envoyer"
               className="rounded-full bg-bleu-boulga text-white hover:bg-bleu-boulga/90"
             >
-              <Send className="size-4" />
+              <ArrowUp className="size-4" />
             </Button>
           )
         )}
