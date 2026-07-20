@@ -233,7 +233,7 @@ export default function SocialPostsPage() {
               placeholder="Décrivez ce que vous voulez publier..."
               isStreaming={isStreaming}
               onStop={stop}
-              className="static border-0 bg-transparent p-0 shadow-none"
+              className="static shadow-none"
               settingsSlot={
                 <div className="flex flex-col gap-2">
                   <Input
@@ -308,6 +308,7 @@ export default function SocialPostsPage() {
                   key={item.id}
                   role="assistant"
                   badge={badgeLabel}
+                  bare
                   actions={
                     <>
                       <CopyButton
@@ -402,7 +403,7 @@ export default function SocialPostsPage() {
               ))
             )}
             {isStreaming && (
-              <ChatMessage role="assistant" badge={badgeLabel} isStreaming>
+              <ChatMessage role="assistant" badge={badgeLabel} bare isStreaming>
                 <SocialPostCard content={output} platform={platform} isStreaming />
               </ChatMessage>
             )}

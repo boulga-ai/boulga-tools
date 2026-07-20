@@ -13,12 +13,17 @@ export function ChatMessage({
   actions,
   badge,
   isStreaming,
+  bare,
 }: {
   role: "user" | "assistant";
   children: ReactNode;
   actions?: ReactNode;
   badge?: string;
   isStreaming?: boolean;
+  // Pour les cas ou `children` est deja une carte auto-porteuse (bordure, fond, padding —
+  // ex. SocialPostCard) : evite le double encadrement et laisse la carte occuper toute la
+  // largeur disponible au lieu de la limiter a 90% et de la retrecir a son contenu.
+  bare?: boolean;
 }) {
   const isUser = role === "user";
 
@@ -32,7 +37,11 @@ export function ChatMessage({
       <div
         className={cn(
           "flex min-w-0 flex-col gap-1.5",
-          isUser ? "max-w-[80%] items-end" : "max-w-[90%] items-start",
+          isUser
+            ? "max-w-[80%] items-end"
+            : bare
+              ? "w-full items-stretch"
+              : "max-w-[90%] items-start",
         )}
       >
         {!isUser && badge && (
@@ -45,23 +54,27 @@ export function ChatMessage({
             {badge}
           </span>
         )}
-        <div
-          className={cn(
-            "rounded-2xl px-4 py-3 text-sm leading-relaxed",
-            isUser
-              ? "bg-blue-50 text-foreground"
-              : "border border-border bg-white text-foreground",
-          )}
-        >
-          {children}
-          {isStreaming && (
-            <span className="ml-1 inline-flex items-center gap-0.5 align-text-bottom">
-              <span className="size-1 animate-pulse rounded-full bg-muted-foreground [animation-delay:0ms]" />
-              <span className="size-1 animate-pulse rounded-full bg-muted-foreground [animation-delay:150ms]" />
-              <span className="size-1 animate-pulse rounded-full bg-muted-foreground [animation-delay:300ms]" />
-            </span>
-          )}
-        </div>
+        {bare ? (
+          children
+        ) : (
+          <div
+            className={cn(
+              "rounded-2xl px-4 py-3 text-sm leading-relaxed",
+              isUser
+                ? "bg-blue-50 text-foreground"
+                : "border border-border bg-white text-foreground",
+            )}
+          >
+            {children}
+            {isStreaming && (
+              <span className="ml-1 inline-flex items-center gap-0.5 align-text-bottom">
+                <span className="size-1 animate-pulse rounded-full bg-muted-foreground [animation-delay:0ms]" />
+                <span className="size-1 animate-pulse rounded-full bg-muted-foreground [animation-delay:150ms]" />
+                <span className="size-1 animate-pulse rounded-full bg-muted-foreground [animation-delay:300ms]" />
+              </span>
+            )}
+          </div>
+        )}
         {actions && (
           <div className="flex flex-wrap gap-1.5">{actions}</div>
         )}
