@@ -57,11 +57,18 @@ def validate_upload(filename: str, content_type: str | None, size: int) -> str:
 
 
 def _convert_via_libreoffice(input_path: Path, target_format: str, output_dir: Path) -> Path:
+    # Profil utilisateur LibreOffice isole par conversion (sous-dossier du tempdir deja
+    # propre a cette requete) : sans ca, des conversions concurrentes partagent le meme
+    # profil par defaut et peuvent se bloquer mutuellement (verrou de profil LibreOffice).
+    profile_dir = output_dir / ".lo-profile"
+    profile_dir.mkdir(exist_ok=True)
+
     try:
         result = subprocess.run(
             [
                 settings.SOFFICE_BIN,
                 "--headless",
+                f"-env:UserInstallation=file://{profile_dir.as_posix()}",
                 "--convert-to",
                 target_format,
                 "--outdir",
