@@ -14,6 +14,8 @@ import {
   GripVertical,
   Minimize2,
   LayoutGrid,
+  Lock,
+  Unlock,
 } from "lucide-react";
 import { ToolLayout } from "@/components/tools/ToolLayout";
 import { DropZone } from "@/components/tools/DropZone";
@@ -91,6 +93,7 @@ export default function ConverterPage() {
           <TabsTrigger value="merge">Fusionner PDF</TabsTrigger>
           <TabsTrigger value="split">Séparer PDF</TabsTrigger>
           <TabsTrigger value="organize">Organiser</TabsTrigger>
+          <TabsTrigger value="protect">Protéger</TabsTrigger>
         </TabsList>
 
         <TabsContent value="convert">
@@ -101,6 +104,9 @@ export default function ConverterPage() {
         </TabsContent>
         <TabsContent value="organize">
           <OrganizeTab />
+        </TabsContent>
+        <TabsContent value="protect">
+          <ProtectTab />
         </TabsContent>
         <TabsContent value="merge">
           <MergeTab />
@@ -636,6 +642,133 @@ function OrganizeTab() {
           </Button>
         </div>
       )}
+
+      {results.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {results.map((r) => (
+            <ConversionResultCard
+              key={r.id}
+              filename={r.filename}
+              url={r.url}
+              onDelete={() => removeResult(r.id)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+type ProtectMode = "protect" | "unlock";
+type ProtectResult = { id: string; filename: string; url: string };
+
+function ProtectTab() {
+  const [mode, setMode] = useState<ProtectMode>("protect");
+  const [file, setFile] = useState<File | null>(null);
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState<ProtectResult[]>([]);
+
+  function handleFiles(files: FileList) {
+    const f = files[0];
+    if (extOf(f.name) !== "pdf") {
+      toast.error("Seul un fichier PDF peut être protégé ou déverrouillé.");
+      return;
+    }
+    setFile(f);
+  }
+
+  function removeResult(id: string) {
+    setResults((prev) => prev.filter((r) => r.id !== id));
+  }
+
+  async function handleSubmit() {
+    if (!file || !password) return;
+    setLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const endpoint = mode === "protect" ? "protect" : "unlock";
+      const res = await apiFetch(
+        `/api/v1/tools/converter/${endpoint}?password=${encodeURIComponent(password)}`,
+        { method: "POST", body: formData },
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(
+          body?.detail ?? (mode === "protect" ? "Échec de la protection." : "Échec du déverrouillage."),
+        );
+      }
+      const result: { url: string; filename: string } = await res.json();
+      setResults((prev) => [...prev, { id: crypto.randomUUID(), ...result }]);
+    } catch (err) {
+      toast.error(
+        mode === "protect" ? "Protection impossible" : "Déverrouillage impossible",
+        { description: (err as Error).message },
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4 pt-4">
+      <div className="flex w-fit gap-1 rounded-[8px] bg-muted p-1">
+        <button
+          type="button"
+          onClick={() => setMode("protect")}
+          className={`rounded-[6px] px-3 py-1.5 text-sm ${mode === "protect" ? "bg-white shadow-sm" : "text-muted-foreground"}`}
+        >
+          Ajouter un mot de passe
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode("unlock")}
+          className={`rounded-[6px] px-3 py-1.5 text-sm ${mode === "unlock" ? "bg-white shadow-sm" : "text-muted-foreground"}`}
+        >
+          Retirer un mot de passe
+        </button>
+      </div>
+
+      <DropZone onFiles={handleFiles} accept="application/pdf" label="Glissez-déposez un PDF, ou" />
+
+      {file && (
+        <div className="flex items-center gap-3 rounded-[8px] border bg-card p-3">
+          <FileText className="size-5 shrink-0 text-muted-foreground" />
+          <div className="flex-1 truncate text-sm">
+            <p className="truncate font-medium">{file.name}</p>
+            <p className="text-muted-foreground">{formatSize(file.size)}</p>
+          </div>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="protect-password">Mot de passe</Label>
+        <Input
+          id="protect-password"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          className="max-w-xs"
+        />
+      </div>
+
+      <div className="flex items-center gap-3">
+        <Button onClick={handleSubmit} disabled={!file || !password || loading} className="w-fit">
+          {loading ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : mode === "protect" ? (
+            <Lock className="size-4" />
+          ) : (
+            <Unlock className="size-4" />
+          )}
+          {loading
+            ? "Traitement en cours..."
+            : mode === "protect"
+              ? "Protéger"
+              : "Déverrouiller"}
+        </Button>
+      </div>
 
       {results.length > 0 && (
         <div className="flex flex-col gap-2">
