@@ -2,20 +2,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronRight, Clock, Mail, Square } from "lucide-react";
+import { Clock } from "lucide-react";
 import { ToolLayout } from "@/components/tools/ToolLayout";
+import { ChatInput } from "@/components/tools/ChatInput";
 import { EmailOutput } from "@/components/tools/EmailOutput";
 import { GenerationError } from "@/components/tools/GenerationError";
 import { RefineBar } from "@/components/tools/RefineBar";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import {
   Select,
   SelectContent,
@@ -25,7 +20,6 @@ import {
 } from "@/components/ui/select";
 import { useStreaming } from "@/hooks/useStreaming";
 import { apiFetch } from "@/lib/api";
-import { cn } from "@/lib/utils";
 
 const TONES = [
   { value: "professionnel", label: "Professionnel" },
@@ -39,7 +33,6 @@ type HistoryItem = { id: string; title: string; created_at: string };
 export default function EmailWriterPage() {
   const [description, setDescription] = useState("");
   const [tone, setTone] = useState("professionnel");
-  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [subject, setSubject] = useState("");
   const [extraDetails, setExtraDetails] = useState("");
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -56,10 +49,9 @@ export default function EmailWriterPage() {
     if (res.ok) setHistory(await res.json());
   }
 
-  async function handleSubmit() {
-    if (!description.trim()) return;
+  async function handleSubmit(text: string) {
     await start("/api/v1/tools/transformers/email-writer", {
-      description,
+      description: text,
       tone,
       subject: subject || undefined,
       extra_details: extraDetails || undefined,
@@ -118,17 +110,6 @@ export default function EmailWriterPage() {
 
         <div className="order-1 flex flex-col gap-3 lg:order-2">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="description">Décrivez l&apos;email que vous souhaitez rédiger</Label>
-            <Textarea
-              id="description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Ex : Je dois relancer un client qui n'a pas payé sa facture depuis 3 semaines, c'est ma deuxième relance..."
-              className="min-h-32"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
             <Label>Ton</Label>
             <Select value={tone} onValueChange={(value) => value && setTone(value)}>
               <SelectTrigger className="w-full">
@@ -144,50 +125,45 @@ export default function EmailWriterPage() {
             </Select>
           </div>
 
-          <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
-            <CollapsibleTrigger className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-              <ChevronRight className={cn("size-3.5 transition-transform", advancedOpen && "rotate-90")} />
-              Options avancées
-            </CollapsibleTrigger>
-            <CollapsibleContent className="flex flex-col gap-3 pt-3">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="subject">Objet de l&apos;email (optionnel)</Label>
-                <Input
-                  id="subject"
-                  value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                  placeholder="Laissez vide pour que l'IA le génère"
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="extraDetails">Précisions supplémentaires (optionnel)</Label>
-                <Textarea
-                  id="extraDetails"
-                  value={extraDetails}
-                  onChange={(e) => setExtraDetails(e.target.value)}
-                  className="min-h-16"
-                />
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
-
-          <div className="flex items-center gap-2">
-            <Button onClick={handleSubmit} disabled={isStreaming || !description.trim()} className="w-fit">
-              <Mail className="size-4" />
-              {isStreaming ? "Rédaction en cours..." : "Rédiger l'email"}
-            </Button>
-            {isStreaming && (
-              <Button variant="outline" onClick={stop} className="w-fit">
-                <Square className="size-4" />
-                Arrêter
-              </Button>
-            )}
+          <div className="flex flex-col gap-1.5">
+            <Label>Décrivez l&apos;email que vous souhaitez rédiger</Label>
+            <ChatInput
+              onSend={handleSubmit}
+              value={description}
+              onValueChange={setDescription}
+              placeholder="Ex : Je dois relancer un client qui n'a pas payé sa facture depuis 3 semaines..."
+              isStreaming={isStreaming}
+              onStop={stop}
+              clearOnSend={false}
+              className="static shadow-none"
+              settingsSlot={
+                <div className="flex flex-col gap-2">
+                  <Input
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    placeholder="Objet de l'email (optionnel)"
+                  />
+                  <Textarea
+                    value={extraDetails}
+                    onChange={(e) => setExtraDetails(e.target.value)}
+                    placeholder="Précisions supplémentaires (optionnel)"
+                    className="min-h-16"
+                  />
+                </div>
+              }
+            />
           </div>
         </div>
 
         <div className="order-2 flex flex-col gap-3 lg:order-3">
-          <EmailOutput text={output} isStreaming={isStreaming} onRegenerate={handleSubmit} />
-          {error && <GenerationError message={error} isQuotaError={isQuotaError} onRetry={handleSubmit} />}
+          <EmailOutput text={output} isStreaming={isStreaming} onRegenerate={() => handleSubmit(description)} />
+          {error && (
+            <GenerationError
+              message={error}
+              isQuotaError={isQuotaError}
+              onRetry={() => handleSubmit(description)}
+            />
+          )}
           {output && !isStreaming && (
             <RefineBar
               presets={["Plus court", "Plus long", "Plus formel", "Plus direct"]}
