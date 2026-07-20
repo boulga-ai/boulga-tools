@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Plus, Send, Trash2, Menu, Square } from "lucide-react";
+import { Plus, Trash2, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ChatInput } from "@/components/tools/ChatInput";
 import { CopyButton } from "@/components/tools/CopyButton";
 import { GenerationError } from "@/components/tools/GenerationError";
 import { MarkdownContent } from "@/components/tools/MarkdownContent";
-import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
   AlertDialog,
@@ -42,7 +42,6 @@ export default function ChatPage() {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
   const { text, isStreaming, error, isQuotaError, start, stop, setText } = useStreaming();
   const { quota, refetch: refetchQuota } = useQuota();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -105,10 +104,7 @@ export default function ChatPage() {
     refreshConversations();
   }
 
-  async function handleSend() {
-    const message = input.trim();
-    if (!message || isStreaming) return;
-    setInput("");
+  async function handleSend(message: string) {
     setMessages((prev) => [...prev, { role: "user", content: message }]);
     await sendMessage(message);
   }
@@ -243,29 +239,13 @@ export default function ChatPage() {
               <GenerationError message={error} isQuotaError={isQuotaError} onRetry={retryLast} />
             </div>
           )}
-          <div className="mx-auto flex max-w-3xl items-end gap-2">
-            <Textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSend();
-                }
-              }}
+          <div className="mx-auto max-w-3xl">
+            <ChatInput
+              onSend={handleSend}
               placeholder="Écrivez votre message..."
-              className="max-h-40 min-h-11 flex-1 resize-none"
+              isStreaming={isStreaming}
+              onStop={stop}
             />
-            {isStreaming ? (
-              <Button variant="outline" onClick={stop}>
-                <Square className="size-4" />
-                Arrêter
-              </Button>
-            ) : (
-              <Button onClick={handleSend} disabled={!input.trim()}>
-                <Send className="size-4" />
-              </Button>
-            )}
           </div>
           {quota && (
             <p className="mx-auto mt-1.5 max-w-3xl text-xs text-muted-foreground">

@@ -20,6 +20,9 @@ export function ChatInput({
   value: controlledValue,
   onValueChange,
   className,
+  // Vrai chat (Chat IA, Social Posts) : le champ se vide apres envoi. Outils formulaire
+  // (Email, Discours...) : le texte reste visible, il est reutilise par "Regenerer"/l'affinage.
+  clearOnSend = true,
 }: {
   onSend: (message: string) => void;
   placeholder?: string;
@@ -30,6 +33,7 @@ export function ChatInput({
   value?: string;
   onValueChange?: (value: string) => void;
   className?: string;
+  clearOnSend?: boolean;
 }) {
   const [internalValue, setInternalValue] = useState("");
   const value = controlledValue ?? internalValue;
@@ -40,7 +44,7 @@ export function ChatInput({
     const trimmed = value.trim();
     if (!trimmed || disabled || isStreaming) return;
     onSend(trimmed);
-    setValue("");
+    if (clearOnSend) setValue("");
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
