@@ -78,8 +78,6 @@ function outputFormatsFor(filename: string): string[] {
 export default function ConverterPage() {
   return (
     <ToolLayout
-      title="Convertisseur de fichiers"
-      description="Convertit PDF, Word, Excel, PowerPoint et images, avec fusion et séparation de PDF."
       badge={
         <span className="w-fit rounded-[4px] bg-succes/10 px-2 py-0.5 text-xs font-medium text-succes">
           Gratuit et illimité
