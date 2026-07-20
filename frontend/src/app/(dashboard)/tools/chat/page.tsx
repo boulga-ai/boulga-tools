@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Plus, Trash2, Menu } from "lucide-react";
+import { Plus, Trash2, Menu, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ChatInput } from "@/components/tools/ChatInput";
 import { CopyButton } from "@/components/tools/CopyButton";
@@ -27,24 +27,26 @@ import { cn } from "@/lib/utils";
 type Message = { role: "user" | "assistant"; content: string };
 type ConversationSummary = { id: string; title: string; updated_at: string };
 
-function relativeDate(iso: string): string {
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const minutes = Math.floor(diffMs / 60000);
-  if (minutes < 1) return "à l'instant";
-  if (minutes < 60) return `il y a ${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `il y a ${hours} h`;
-  const days = Math.floor(hours / 24);
-  return `il y a ${days} j`;
-}
+const HISTORY_COLLAPSE_KEY = "boulga:chat-history-collapsed";
 
 export default function ChatPage() {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [historyCollapsed, setHistoryCollapsed] = useState(
+    () => typeof window !== "undefined" && localStorage.getItem(HISTORY_COLLAPSE_KEY) === "1",
+  );
   const { text, isStreaming, error, isQuotaError, start, stop, setText } = useStreaming();
   const { quota, refetch: refetchQuota } = useQuota();
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  function toggleHistory() {
+    setHistoryCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem(HISTORY_COLLAPSE_KEY, next ? "1" : "0");
+      return next;
+    });
+  }
 
   useEffect(() => {
     apiFetch("/api/v1/tools/chat/conversations").then((res) => {
@@ -116,10 +118,20 @@ export default function ChatPage() {
 
   const conversationList = (
     <div className="flex h-full w-60 shrink-0 flex-col gap-2 border-r bg-card p-3">
-      <Button variant="outline" onClick={startNewConversation} className="w-full justify-start">
-        <Plus className="size-4" />
-        Nouvelle conversation
-      </Button>
+      <div className="flex items-center gap-1.5">
+        <Button variant="outline" onClick={startNewConversation} className="flex-1 justify-start">
+          <Plus className="size-4" />
+          Nouvelle conversation
+        </Button>
+        <button
+          type="button"
+          onClick={toggleHistory}
+          title="Masquer l'historique"
+          className="hidden size-8 shrink-0 items-center justify-center rounded-[8px] text-muted-foreground hover:bg-accent hover:text-foreground md:flex"
+        >
+          <PanelLeftClose className="size-4" />
+        </button>
+      </div>
       <div className="flex flex-1 flex-col gap-0.5 overflow-y-auto">
         {conversations.map((c) => (
           <div
@@ -134,10 +146,7 @@ export default function ChatPage() {
               className="flex-1 truncate text-left"
               title={c.title}
             >
-              <span className="block truncate">{c.title || "Sans titre"}</span>
-              <span className="block text-xs text-muted-foreground">
-                {relativeDate(c.updated_at)}
-              </span>
+              {c.title || "Sans titre"}
             </button>
             <AlertDialog>
               <AlertDialogTrigger
@@ -169,7 +178,7 @@ export default function ChatPage() {
 
   return (
     <div className="flex flex-1 overflow-hidden">
-      <div className="hidden md:flex">{conversationList}</div>
+      {!historyCollapsed && <div className="hidden md:flex">{conversationList}</div>}
 
       <div className="flex flex-1 flex-col overflow-hidden">
         <div className="flex items-center gap-2 border-b bg-card px-4 py-2 md:hidden">
@@ -184,6 +193,19 @@ export default function ChatPage() {
           </Sheet>
           <span className="font-medium">Chat IA</span>
         </div>
+
+        {historyCollapsed && (
+          <div className="hidden border-b bg-card px-3 py-2 md:flex">
+            <button
+              type="button"
+              onClick={toggleHistory}
+              title="Afficher l'historique"
+              className="flex size-8 items-center justify-center rounded-[8px] text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              <PanelLeftOpen className="size-4" />
+            </button>
+          </div>
+        )}
 
         <div ref={scrollRef} className="flex flex-1 flex-col overflow-y-auto p-4 md:p-6">
           <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-5">
