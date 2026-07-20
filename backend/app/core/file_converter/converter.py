@@ -1,7 +1,10 @@
+import io
 import subprocess
 import uuid
 from pathlib import Path
+from typing import Literal
 
+import pikepdf
 from PIL import Image
 from pypdf import PdfReader, PdfWriter
 
@@ -156,6 +159,57 @@ def split_pdf(input_path: Path, pages_spec: str, output_path: Path) -> Path:
         writer.add_page(reader.pages[i])
     with open(output_path, "wb") as f:
         writer.write(f)
+    return output_path
+
+
+def _downsample_images(pdf: pikepdf.Pdf, max_width: int = 1500) -> None:
+    for page in pdf.pages:
+        resources = page.get("/Resources")
+        if resources is None or "/XObject" not in resources:
+            continue
+        for xobj in resources["/XObject"].as_dict().values():
+            if xobj.get("/Subtype") != pikepdf.Name("/Image"):
+                continue
+            try:
+                pdf_image = pikepdf.PdfImage(xobj)
+                if pdf_image.width <= max_width:
+                    continue
+                pil_image = pdf_image.as_pil_image().convert("RGB")
+                ratio = max_width / pil_image.width
+                new_size = (max_width, max(1, int(pil_image.height * ratio)))
+                resized = pil_image.resize(new_size, Image.LANCZOS)
+                buffer = io.BytesIO()
+                resized.save(buffer, format="JPEG", quality=70)
+                xobj.write(buffer.getvalue(), filter=pikepdf.Name("/DCTDecode"))
+                xobj.ColorSpace = pikepdf.Name("/DeviceRGB")
+                xobj.Width = new_size[0]
+                xobj.Height = new_size[1]
+                xobj.BitsPerComponent = 8
+            except Exception:
+                # Image non recompressible (colorspace exotique, masque, etc.) : on la
+                # laisse telle quelle plutot que de faire echouer toute la compression.
+                continue
+
+
+def compress_pdf(input_path: Path, output_path: Path, level: Literal["leger", "fort"] = "leger") -> Path:
+    try:
+        pdf = pikepdf.open(input_path)
+    except pikepdf.PasswordError as exc:
+        raise ConversionError("Ce PDF est protege par mot de passe.") from exc
+    except pikepdf.PdfError as exc:
+        raise ConversionError("Le fichier PDF est corrompu ou illisible.") from exc
+
+    try:
+        if level == "fort":
+            _downsample_images(pdf)
+        pdf.save(
+            output_path,
+            compress_streams=True,
+            object_stream_mode=pikepdf.ObjectStreamMode.generate,
+        )
+    finally:
+        pdf.close()
+
     return output_path
 
 

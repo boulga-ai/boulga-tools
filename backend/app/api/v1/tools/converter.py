@@ -1,10 +1,12 @@
 import tempfile
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 
 from app.core.file_converter.converter import (
     ConversionError,
+    compress_pdf,
     convert,
     merge_pdfs,
     new_temp_filename,
@@ -56,6 +58,38 @@ async def convert_file(
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc))
 
         return _publish(user["user_id"], output_path)
+
+
+@router.post("/compress")
+async def compress_file(
+    file: UploadFile,
+    level: Literal["leger", "fort"] = "leger",
+    user: dict = Depends(get_current_user),
+) -> dict:
+    try:
+        content, ext = await _read_and_validate(file)
+    except ConversionError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    if ext != "pdf":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Seul un fichier PDF peut etre compresse."
+        )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        input_path = tmp_path / "input.pdf"
+        input_path.write_bytes(content)
+        output_path = tmp_path / "compresse.pdf"
+
+        try:
+            compress_pdf(input_path, output_path, level=level)
+        except ConversionError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+        result = _publish(user["user_id"], output_path)
+        result["size_before"] = len(content)
+        result["size_after"] = output_path.stat().st_size
+        return result
 
 
 @router.post("/merge")
