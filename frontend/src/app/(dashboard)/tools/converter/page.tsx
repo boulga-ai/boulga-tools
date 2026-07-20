@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { ToolLayout } from "@/components/tools/ToolLayout";
 import { DropZone } from "@/components/tools/DropZone";
+import { ConversionResultCard } from "@/components/tools/ConversionResultCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -104,75 +105,134 @@ function ResultDownload({ url, filename }: { url: string; filename: string }) {
   );
 }
 
+type QueuedFile = { id: string; file: File; outputFormat: string };
+type ConversionResult = { id: string; filename: string; url: string };
+
 function ConvertTab() {
-  const [file, setFile] = useState<File | null>(null);
-  const [outputFormat, setOutputFormat] = useState<string | undefined>(undefined);
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ url: string; filename: string } | null>(null);
+  const [queue, setQueue] = useState<QueuedFile[]>([]);
+  const [converting, setConverting] = useState(false);
+  const [convertingId, setConvertingId] = useState<string | null>(null);
+  const [results, setResults] = useState<ConversionResult[]>([]);
 
   function handleFiles(files: FileList) {
-    const f = files[0];
-    setFile(f);
-    setResult(null);
-    setOutputFormat(outputFormatsFor(f.name)[0]);
+    const newItems = Array.from(files).map((f) => ({
+      id: crypto.randomUUID(),
+      file: f,
+      outputFormat: outputFormatsFor(f.name)[0],
+    }));
+    setQueue((prev) => [...prev, ...newItems]);
   }
 
-  async function handleConvert() {
-    if (!file || !outputFormat) return;
-    setLoading(true);
-    setResult(null);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await apiFetch(
-        `/api/v1/tools/converter/convert?output_format=${encodeURIComponent(outputFormat)}`,
-        { method: "POST", body: formData },
-      );
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        throw new Error(body?.detail ?? "Échec de la conversion.");
+  function removeQueued(id: string) {
+    setQueue((prev) => prev.filter((q) => q.id !== id));
+  }
+
+  function updateFormat(id: string, format: string) {
+    setQueue((prev) => prev.map((q) => (q.id === id ? { ...q, outputFormat: format } : q)));
+  }
+
+  function removeResult(id: string) {
+    setResults((prev) => prev.filter((r) => r.id !== id));
+  }
+
+  async function handleConvertAll() {
+    setConverting(true);
+    for (const item of queue) {
+      setConvertingId(item.id);
+      try {
+        const formData = new FormData();
+        formData.append("file", item.file);
+        const res = await apiFetch(
+          `/api/v1/tools/converter/convert?output_format=${encodeURIComponent(item.outputFormat)}`,
+          { method: "POST", body: formData },
+        );
+        if (!res.ok) {
+          const body = await res.json().catch(() => null);
+          throw new Error(body?.detail ?? "Échec de la conversion.");
+        }
+        const result: { url: string; filename: string } = await res.json();
+        setResults((prev) => [...prev, { id: crypto.randomUUID(), ...result }]);
+        setQueue((prev) => prev.filter((q) => q.id !== item.id));
+      } catch (err) {
+        toast.error(`Conversion impossible : ${item.file.name}`, {
+          description: (err as Error).message,
+        });
       }
-      setResult(await res.json());
-    } catch (err) {
-      toast.error("Conversion impossible", { description: (err as Error).message });
-    } finally {
-      setLoading(false);
     }
+    setConvertingId(null);
+    setConverting(false);
   }
 
   return (
     <div className="flex flex-col gap-4 pt-4">
-      <DropZone onFiles={handleFiles} />
+      <DropZone onFiles={handleFiles} multiple />
 
-      {file && (
-        <div className="flex items-center gap-3 rounded-[8px] border bg-card p-3">
-          <FileText className="size-5 shrink-0 text-muted-foreground" />
-          <div className="flex-1 truncate text-sm">
-            <p className="truncate font-medium">{file.name}</p>
-            <p className="text-muted-foreground">{formatSize(file.size)}</p>
-          </div>
-          <Select value={outputFormat} onValueChange={(v) => v && setOutputFormat(v)}>
-            <SelectTrigger className="w-32">
-              <SelectValue placeholder="Format" />
-            </SelectTrigger>
-            <SelectContent>
-              {outputFormatsFor(file.name).map((f) => (
-                <SelectItem key={f} value={f}>
-                  .{f}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      {queue.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          {queue.map((item) => (
+            <div
+              key={item.id}
+              className="flex items-center gap-3 rounded-[8px] border bg-card p-3"
+            >
+              {convertingId === item.id ? (
+                <Loader2 className="size-5 shrink-0 animate-spin text-muted-foreground" />
+              ) : (
+                <FileText className="size-5 shrink-0 text-muted-foreground" />
+              )}
+              <div className="flex-1 truncate text-sm">
+                <p className="truncate font-medium">{item.file.name}</p>
+                <p className="text-muted-foreground">{formatSize(item.file.size)}</p>
+              </div>
+              <Select
+                value={item.outputFormat}
+                onValueChange={(v) => v && updateFormat(item.id, v)}
+                disabled={converting}
+              >
+                <SelectTrigger className="w-32">
+                  <SelectValue placeholder="Format" />
+                </SelectTrigger>
+                <SelectContent>
+                  {outputFormatsFor(item.file.name).map((f) => (
+                    <SelectItem key={f} value={f}>
+                      .{f}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <button
+                type="button"
+                onClick={() => removeQueued(item.id)}
+                disabled={converting}
+                className="shrink-0 text-muted-foreground hover:text-erreur disabled:opacity-50"
+              >
+                <Trash2 className="size-4" />
+              </button>
+            </div>
+          ))}
         </div>
       )}
 
       <div className="flex items-center gap-3">
-        <Button onClick={handleConvert} disabled={!file || loading} className="w-fit">
-          {loading ? <Loader2 className="size-4 animate-spin" /> : <ArrowRightLeft className="size-4" />}
-          {loading ? "Conversion en cours..." : "Convertir"}
+        <Button onClick={handleConvertAll} disabled={queue.length === 0 || converting} className="w-fit">
+          {converting ? <Loader2 className="size-4 animate-spin" /> : <ArrowRightLeft className="size-4" />}
+          {converting
+            ? "Conversion en cours..."
+            : `Convertir${queue.length > 1 ? ` (${queue.length})` : ""}`}
         </Button>
-        {result && <ResultDownload {...result} />}
       </div>
+
+      {results.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {results.map((r) => (
+            <ConversionResultCard
+              key={r.id}
+              filename={r.filename}
+              url={r.url}
+              onDelete={() => removeResult(r.id)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
