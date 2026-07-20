@@ -185,52 +185,43 @@ export default function ChatPage() {
           <span className="font-medium">Chat IA</span>
         </div>
 
-        <div ref={scrollRef} className="flex flex-1 flex-col gap-4 overflow-y-auto p-4 md:p-6">
-          {messages.length === 0 && !isStreaming && (
-            <div className="m-auto max-w-md text-center text-muted-foreground">
-              <p className="text-foreground">Bonjour ! Je suis Boulga.</p>
-              <p className="text-sm">Posez-moi une question pour commencer.</p>
-            </div>
-          )}
-
-          {messages.map((m, i) => (
-            <div
-              key={i}
-              className={cn(
-                "group flex flex-col gap-1",
-                m.role === "user" ? "items-end" : "items-start",
-              )}
-            >
-              <div
-                className={cn(
-                  "max-w-[80%] rounded-[12px] px-4 py-2.5 text-sm",
-                  m.role === "user"
-                    ? "whitespace-pre-wrap bg-blue-50 text-foreground"
-                    : "bg-card border",
-                )}
-              >
-                {m.role === "assistant" ? <MarkdownContent text={m.content} /> : m.content}
+        <div ref={scrollRef} className="flex flex-1 flex-col overflow-y-auto p-4 md:p-6">
+          <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-5">
+            {messages.length === 0 && !isStreaming && (
+              <div className="m-auto max-w-md text-center text-muted-foreground">
+                <p className="text-foreground">Bonjour ! Je suis Boulga.</p>
+                <p className="text-sm">Posez-moi une question pour commencer.</p>
               </div>
-              {m.role === "assistant" && (
-                <CopyButton
-                  text={m.content}
-                  label="Copier"
-                  variant="ghost"
-                  size="sm"
-                  className="hidden h-6 px-1.5 text-xs text-muted-foreground group-hover:flex"
-                />
-              )}
-            </div>
-          ))}
+            )}
 
-          {isStreaming && (
-            <div className="flex justify-start">
-              <div className="max-w-[80%] rounded-[12px] border bg-card px-4 py-2.5 text-sm">
+            {messages.map((m, i) =>
+              m.role === "user" ? (
+                <div key={i} className="flex justify-end">
+                  <div className="max-w-[80%] whitespace-pre-wrap rounded-[12px] bg-blue-50 px-4 py-2.5 text-sm text-foreground">
+                    {m.content}
+                  </div>
+                </div>
+              ) : (
+                <div key={i} className="group flex w-full flex-col gap-1">
+                  <MarkdownContent text={m.content} />
+                  <CopyButton
+                    text={m.content}
+                    label="Copier"
+                    variant="ghost"
+                    size="sm"
+                    className="hidden h-6 w-fit px-1.5 text-xs text-muted-foreground group-hover:flex"
+                  />
+                </div>
+              ),
+            )}
+
+            {isStreaming && (
+              <div className="w-full text-sm">
                 <MarkdownContent text={text} />
                 <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-bleu-boulga align-text-bottom" />
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         <div className="border-t bg-card p-3 md:p-4">
