@@ -7,6 +7,7 @@ from typing import Literal
 import pikepdf
 from PIL import Image
 from pypdf import PdfReader, PdfWriter
+from pypdf.errors import PdfReadError, WrongPasswordError
 
 from app.config import settings
 
@@ -157,6 +158,33 @@ def split_pdf(input_path: Path, pages_spec: str, output_path: Path) -> Path:
     writer = PdfWriter()
     for i in indices:
         writer.add_page(reader.pages[i])
+    with open(output_path, "wb") as f:
+        writer.write(f)
+    return output_path
+
+
+def protect_pdf(input_path: Path, password: str, output_path: Path) -> Path:
+    reader = PdfReader(str(input_path))
+    writer = PdfWriter()
+    for page in reader.pages:
+        writer.add_page(page)
+    writer.encrypt(password)
+    with open(output_path, "wb") as f:
+        writer.write(f)
+    return output_path
+
+
+def unlock_pdf(input_path: Path, password: str, output_path: Path) -> Path:
+    try:
+        reader = PdfReader(str(input_path), password=password)
+    except WrongPasswordError as exc:
+        raise ConversionError("Mot de passe incorrect.") from exc
+    except PdfReadError as exc:
+        raise ConversionError("Ce PDF n'est pas protege par mot de passe.") from exc
+
+    writer = PdfWriter()
+    for page in reader.pages:
+        writer.add_page(page)
     with open(output_path, "wb") as f:
         writer.write(f)
     return output_path

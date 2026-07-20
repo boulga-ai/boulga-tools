@@ -12,7 +12,9 @@ from app.core.file_converter.converter import (
     merge_pdfs,
     new_temp_filename,
     organize_pdf,
+    protect_pdf,
     split_pdf,
+    unlock_pdf,
     validate_upload,
 )
 from app.dependencies import get_current_user
@@ -161,6 +163,64 @@ async def organize_file(
 
         try:
             organize_pdf(input_path, parsed_operations, output_path)
+        except ConversionError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+        return _publish(user["user_id"], output_path)
+
+
+@router.post("/protect")
+async def protect_file(
+    file: UploadFile,
+    password: str,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    try:
+        content, ext = await _read_and_validate(file)
+    except ConversionError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    if ext != "pdf":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Seul un fichier PDF peut etre protege."
+        )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        input_path = tmp_path / "input.pdf"
+        input_path.write_bytes(content)
+        output_path = tmp_path / "protege.pdf"
+
+        try:
+            protect_pdf(input_path, password, output_path)
+        except ConversionError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+        return _publish(user["user_id"], output_path)
+
+
+@router.post("/unlock")
+async def unlock_file(
+    file: UploadFile,
+    password: str,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    try:
+        content, ext = await _read_and_validate(file)
+    except ConversionError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    if ext != "pdf":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Seul un fichier PDF peut etre deverrouille."
+        )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        input_path = tmp_path / "input.pdf"
+        input_path.write_bytes(content)
+        output_path = tmp_path / "deverrouille.pdf"
+
+        try:
+            unlock_pdf(input_path, password, output_path)
         except ConversionError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
