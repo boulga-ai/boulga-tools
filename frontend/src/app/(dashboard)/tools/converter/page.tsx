@@ -100,7 +100,7 @@ const COLOR_STYLES = {
     iconBg: "bg-blue-600",
     dropzoneDrag: "border-blue-600 bg-blue-50",
     text: "text-blue-600",
-    cardAccent: "border-l-4 border-l-blue-600",
+    cardAccent: "border-blue-600",
     buttonBg: "bg-blue-600 text-white hover:bg-blue-600/90",
   },
   green: {
@@ -108,7 +108,7 @@ const COLOR_STYLES = {
     iconBg: "bg-green-600",
     dropzoneDrag: "border-green-600 bg-green-50",
     text: "text-green-600",
-    cardAccent: "border-l-4 border-l-green-600",
+    cardAccent: "border-green-600",
     buttonBg: "bg-green-600 text-white hover:bg-green-600/90",
   },
   orange: {
@@ -116,7 +116,7 @@ const COLOR_STYLES = {
     iconBg: "bg-orange-600",
     dropzoneDrag: "border-orange-600 bg-orange-50",
     text: "text-orange-600",
-    cardAccent: "border-l-4 border-l-orange-600",
+    cardAccent: "border-orange-600",
     buttonBg: "bg-orange-600 text-white hover:bg-orange-600/90",
   },
   purple: {
@@ -124,7 +124,7 @@ const COLOR_STYLES = {
     iconBg: "bg-purple-600",
     dropzoneDrag: "border-purple-600 bg-purple-50",
     text: "text-purple-600",
-    cardAccent: "border-l-4 border-l-purple-600",
+    cardAccent: "border-purple-600",
     buttonBg: "bg-purple-600 text-white hover:bg-purple-600/90",
   },
   indigo: {
@@ -132,7 +132,7 @@ const COLOR_STYLES = {
     iconBg: "bg-indigo-600",
     dropzoneDrag: "border-indigo-600 bg-indigo-50",
     text: "text-indigo-600",
-    cardAccent: "border-l-4 border-l-indigo-600",
+    cardAccent: "border-indigo-600",
     buttonBg: "bg-indigo-600 text-white hover:bg-indigo-600/90",
   },
 } as const;
