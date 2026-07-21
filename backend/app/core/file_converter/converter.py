@@ -190,30 +190,6 @@ def unlock_pdf(input_path: Path, password: str, output_path: Path) -> Path:
     return output_path
 
 
-def organize_pdf(input_path: Path, operations: list[dict], output_path: Path) -> Path:
-    """operations : liste ordonnee [{"page": int (index 0-based), "rotate": int (0/90/180/270)}].
-    Determine a la fois l'ordre, les pages conservees (les autres sont supprimees) et leur rotation."""
-    reader = PdfReader(str(input_path))
-    page_count = len(reader.pages)
-    if not operations:
-        raise ConversionError("Aucune page a conserver.")
-
-    writer = PdfWriter()
-    for op in operations:
-        index = op.get("page")
-        if not isinstance(index, int) or index < 0 or index >= page_count:
-            raise ConversionError(f"Page invalide : {index} (document de {page_count} pages).")
-        page = reader.pages[index]
-        rotate = op.get("rotate", 0)
-        if rotate:
-            page = page.rotate(rotate)
-        writer.add_page(page)
-
-    with open(output_path, "wb") as f:
-        writer.write(f)
-    return output_path
-
-
 def _downsample_images(pdf: pikepdf.Pdf, max_width: int = 1500) -> None:
     for page in pdf.pages:
         resources = page.get("/Resources")

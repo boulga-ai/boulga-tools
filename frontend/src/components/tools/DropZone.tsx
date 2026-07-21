@@ -9,11 +9,18 @@ export function DropZone({
   multiple = false,
   accept,
   label = "Glissez-déposez un fichier, ou",
+  accentDragClassName = "border-bleu-boulga bg-blue-50",
+  accentTextClassName = "text-bleu-boulga",
 }: {
   onFiles: (files: FileList) => void;
   multiple?: boolean;
   accept?: string;
   label?: string;
+  // Personnalisation de l'accent (bordure/fond au survol, couleur du lien) — utilise le
+  // bleu Boulga par defaut, mais un outil peut passer sa propre couleur (ex. Convertisseur
+  // avec une identite couleur par operation).
+  accentDragClassName?: string;
+  accentTextClassName?: string;
 }) {
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -32,7 +39,7 @@ export function DropZone({
       }}
       className={cn(
         "flex flex-col items-center justify-center gap-2 rounded-[12px] border-2 border-dashed p-8 text-center transition-colors",
-        dragging ? "border-bleu-boulga bg-blue-50" : "border-border",
+        dragging ? accentDragClassName : "border-border",
       )}
     >
       <UploadCloud className="size-6 text-muted-foreground" />
@@ -41,7 +48,7 @@ export function DropZone({
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
-          className="font-medium text-bleu-boulga hover:underline"
+          className={cn("font-medium hover:underline", accentTextClassName)}
         >
           choisissez un fichier
         </button>

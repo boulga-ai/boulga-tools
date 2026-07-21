@@ -1,5 +1,6 @@
 import { Download, FileText, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export function ConversionResultCard({
   filename,
@@ -7,15 +8,24 @@ export function ConversionResultCard({
   compressionInfo,
   url,
   onDelete,
+  accentClassName,
 }: {
   filename: string;
   sizeLabel?: string;
   compressionInfo?: string;
   url: string;
   onDelete: () => void;
+  // Fine bordure gauche coloree, propre a l'outil qui a produit ce resultat (ex. bleu pour
+  // Convertir, vert pour Compresser...) — optionnelle, sans effet si non fournie.
+  accentClassName?: string;
 }) {
   return (
-    <div className="flex animate-in fade-in slide-in-from-bottom-1 items-center gap-3 rounded-[12px] border bg-white p-3 shadow-sm duration-200">
+    <div
+      className={cn(
+        "flex animate-in fade-in slide-in-from-bottom-1 items-center gap-3 rounded-[12px] border bg-white p-3 shadow-sm duration-200",
+        accentClassName,
+      )}
+    >
       <FileText className="size-5 shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{filename}</p>

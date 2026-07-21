@@ -1,9 +1,8 @@
-import json
 import tempfile
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 
 from app.core.file_converter.converter import (
     ConversionError,
@@ -11,7 +10,6 @@ from app.core.file_converter.converter import (
     convert,
     merge_pdfs,
     new_temp_filename,
-    organize_pdf,
     protect_pdf,
     split_pdf,
     unlock_pdf,
@@ -131,40 +129,6 @@ async def merge_files(
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Echec de la fusion : {exc}"
             )
-
-        return _publish(user["user_id"], output_path)
-
-
-@router.post("/organize")
-async def organize_file(
-    file: UploadFile,
-    operations: str = Form(...),
-    user: dict = Depends(get_current_user),
-) -> dict:
-    try:
-        content, ext = await _read_and_validate(file)
-    except ConversionError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-    if ext != "pdf":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Seul un fichier PDF peut etre organise."
-        )
-
-    try:
-        parsed_operations = json.loads(operations)
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Operations invalides.")
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmp_path = Path(tmpdir)
-        input_path = tmp_path / "input.pdf"
-        input_path.write_bytes(content)
-        output_path = tmp_path / "organise.pdf"
-
-        try:
-            organize_pdf(input_path, parsed_operations, output_path)
-        except ConversionError as exc:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
         return _publish(user["user_id"], output_path)
 

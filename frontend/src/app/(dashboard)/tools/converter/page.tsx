@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
-import dynamic from "next/dynamic";
 import { toast } from "sonner";
 import {
+  ArrowLeft,
   ArrowRightLeft,
   Merge,
   Scissors,
@@ -12,14 +12,13 @@ import {
   Loader2,
   GripVertical,
   Minimize2,
-  LayoutGrid,
   Lock,
   Unlock,
+  type LucideIcon,
 } from "lucide-react";
 import { ToolLayout } from "@/components/tools/ToolLayout";
 import { DropZone } from "@/components/tools/DropZone";
 import { ConversionResultCard } from "@/components/tools/ConversionResultCard";
-import type { PageOperation } from "@/components/tools/PdfPageThumbnails";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,15 +29,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiFetch } from "@/lib/api";
-
-// pdfjs-dist touche des API navigateur (Worker, DOMMatrix...) absentes cote serveur —
-// meme convention que PdfViewer.tsx.
-const PdfPageThumbnails = dynamic(
-  () => import("@/components/tools/PdfPageThumbnails").then((m) => m.PdfPageThumbnails),
-  { ssr: false },
-);
+import { cn } from "@/lib/utils";
 
 const IMAGE_EXTS = ["png", "jpg", "jpeg", "webp", "bmp", "gif"];
 const OFFICE_TO_PDF: Record<string, string[]> = {
@@ -99,7 +91,131 @@ function outputFormatsFor(filename: string): string[] {
   return OFFICE_TO_PDF[ext] ?? ["pdf"];
 }
 
+// Identite visuelle par outil — reprise partout (tuile d'accueil, page dediee, carte de
+// resultat) pour qu'on reconnaisse immediatement quel outil on utilise, comme sur
+// iLovePDF/Foxit ou chaque type d'operation a sa propre couleur.
+const COLOR_STYLES = {
+  blue: {
+    tile: "bg-blue-50 hover:bg-blue-100/80",
+    iconBg: "bg-blue-600",
+    dropzoneDrag: "border-blue-600 bg-blue-50",
+    text: "text-blue-600",
+    cardAccent: "border-l-4 border-l-blue-600",
+    buttonBg: "bg-blue-600 text-white hover:bg-blue-600/90",
+  },
+  green: {
+    tile: "bg-green-50 hover:bg-green-100/80",
+    iconBg: "bg-green-600",
+    dropzoneDrag: "border-green-600 bg-green-50",
+    text: "text-green-600",
+    cardAccent: "border-l-4 border-l-green-600",
+    buttonBg: "bg-green-600 text-white hover:bg-green-600/90",
+  },
+  orange: {
+    tile: "bg-orange-50 hover:bg-orange-100/80",
+    iconBg: "bg-orange-600",
+    dropzoneDrag: "border-orange-600 bg-orange-50",
+    text: "text-orange-600",
+    cardAccent: "border-l-4 border-l-orange-600",
+    buttonBg: "bg-orange-600 text-white hover:bg-orange-600/90",
+  },
+  purple: {
+    tile: "bg-purple-50 hover:bg-purple-100/80",
+    iconBg: "bg-purple-600",
+    dropzoneDrag: "border-purple-600 bg-purple-50",
+    text: "text-purple-600",
+    cardAccent: "border-l-4 border-l-purple-600",
+    buttonBg: "bg-purple-600 text-white hover:bg-purple-600/90",
+  },
+  indigo: {
+    tile: "bg-indigo-50 hover:bg-indigo-100/80",
+    iconBg: "bg-indigo-600",
+    dropzoneDrag: "border-indigo-600 bg-indigo-50",
+    text: "text-indigo-600",
+    cardAccent: "border-l-4 border-l-indigo-600",
+    buttonBg: "bg-indigo-600 text-white hover:bg-indigo-600/90",
+  },
+} as const;
+
+type ColorKey = keyof typeof COLOR_STYLES;
+type ToolKey = "convert" | "compress" | "merge" | "split" | "protect";
+
+const TOOL_META: Record<
+  ToolKey,
+  { label: string; description: string; icon: LucideIcon; color: ColorKey }
+> = {
+  convert: {
+    label: "Convertir",
+    description: "Passez d'un format à un autre : PDF, Word, Excel, PowerPoint, images.",
+    icon: ArrowRightLeft,
+    color: "blue",
+  },
+  compress: {
+    label: "Compresser",
+    description: "Réduisez la taille d'un PDF sans perdre en qualité.",
+    icon: Minimize2,
+    color: "green",
+  },
+  merge: {
+    label: "Fusionner",
+    description: "Combinez plusieurs PDF en un seul document, dans l'ordre choisi.",
+    icon: Merge,
+    color: "orange",
+  },
+  split: {
+    label: "Diviser",
+    description: "Extrayez des pages précises d'un PDF.",
+    icon: Scissors,
+    color: "purple",
+  },
+  protect: {
+    label: "Protéger",
+    description: "Ajoutez ou retirez un mot de passe sur un PDF.",
+    icon: Lock,
+    color: "indigo",
+  },
+};
+
+function ToolHub({ onSelect }: { onSelect: (tool: ToolKey) => void }) {
+  return (
+    <div className="grid grid-cols-2 gap-4 pt-6 sm:grid-cols-3 lg:grid-cols-5">
+      {(Object.keys(TOOL_META) as ToolKey[]).map((key) => {
+        const meta = TOOL_META[key];
+        const styles = COLOR_STYLES[meta.color];
+        const Icon = meta.icon;
+        return (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onSelect(key)}
+            className={cn(
+              "group flex flex-col items-start gap-3 rounded-[16px] border border-transparent p-5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md",
+              styles.tile,
+            )}
+          >
+            <span
+              className={cn(
+                "flex size-11 items-center justify-center rounded-[12px] text-white transition-transform group-hover:scale-105",
+                styles.iconBg,
+              )}
+            >
+              <Icon className="size-5" />
+            </span>
+            <span className="text-base font-semibold text-marine">{meta.label}</span>
+            <span className="text-sm text-muted-foreground">{meta.description}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function ConverterPage() {
+  const [activeTool, setActiveTool] = useState<ToolKey | null>(null);
+
+  const meta = activeTool ? TOOL_META[activeTool] : null;
+  const ActiveIcon = meta?.icon;
+
   return (
     <ToolLayout
       badge={
@@ -108,35 +224,37 @@ export default function ConverterPage() {
         </span>
       }
     >
-      <Tabs defaultValue="convert" className="flex-1">
-        <TabsList className="max-w-full overflow-x-auto">
-          <TabsTrigger value="convert">Convertir</TabsTrigger>
-          <TabsTrigger value="compress">Compresser</TabsTrigger>
-          <TabsTrigger value="merge">Fusionner PDF</TabsTrigger>
-          <TabsTrigger value="split">Séparer PDF</TabsTrigger>
-          <TabsTrigger value="organize">Organiser</TabsTrigger>
-          <TabsTrigger value="protect">Protéger</TabsTrigger>
-        </TabsList>
+      {activeTool === null || !meta || !ActiveIcon ? (
+        <ToolHub onSelect={setActiveTool} />
+      ) : (
+        <div className="flex animate-in fade-in slide-in-from-bottom-1 flex-col gap-1 duration-200">
+          <button
+            type="button"
+            onClick={() => setActiveTool(null)}
+            className="flex w-fit items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="size-4" />
+            Retour
+          </button>
+          <div className="flex items-center gap-2 pt-1">
+            <span
+              className={cn(
+                "flex size-8 items-center justify-center rounded-[8px] text-white",
+                COLOR_STYLES[meta.color].iconBg,
+              )}
+            >
+              <ActiveIcon className="size-4" />
+            </span>
+            <h2 className="text-lg font-semibold text-marine">{meta.label}</h2>
+          </div>
 
-        <TabsContent value="convert">
-          <ConvertTab />
-        </TabsContent>
-        <TabsContent value="compress">
-          <CompressTab />
-        </TabsContent>
-        <TabsContent value="organize">
-          <OrganizeTab />
-        </TabsContent>
-        <TabsContent value="protect">
-          <ProtectTab />
-        </TabsContent>
-        <TabsContent value="merge">
-          <MergeTab />
-        </TabsContent>
-        <TabsContent value="split">
-          <SplitTab />
-        </TabsContent>
-      </Tabs>
+          {activeTool === "convert" && <ConvertTab color="blue" />}
+          {activeTool === "compress" && <CompressTab color="green" />}
+          {activeTool === "merge" && <MergeTab color="orange" />}
+          {activeTool === "split" && <SplitTab color="purple" />}
+          {activeTool === "protect" && <ProtectTab color="indigo" />}
+        </div>
+      )}
     </ToolLayout>
   );
 }
@@ -144,7 +262,8 @@ export default function ConverterPage() {
 type QueuedFile = { id: string; file: File; outputFormat: string };
 type ConversionResult = { id: string; filename: string; url: string };
 
-function ConvertTab() {
+function ConvertTab({ color }: { color: ColorKey }) {
+  const styles = COLOR_STYLES[color];
   const [queue, setQueue] = useState<QueuedFile[]>([]);
   const [converting, setConverting] = useState(false);
   const [convertingId, setConvertingId] = useState<string | null>(null);
@@ -203,7 +322,12 @@ function ConvertTab() {
 
   return (
     <div className="flex flex-col gap-4 pt-4">
-      <DropZone onFiles={handleFiles} multiple />
+      <DropZone
+        onFiles={handleFiles}
+        multiple
+        accentDragClassName={styles.dropzoneDrag}
+        accentTextClassName={styles.text}
+      />
 
       {queue.length > 0 && (
         <div className="flex flex-col gap-1.5">
@@ -251,7 +375,11 @@ function ConvertTab() {
       )}
 
       <div className="flex items-center gap-3">
-        <Button onClick={handleConvertAll} disabled={queue.length === 0 || converting} className="w-fit">
+        <Button
+          onClick={handleConvertAll}
+          disabled={queue.length === 0 || converting}
+          className={cn("w-fit", styles.buttonBg)}
+        >
           {converting ? <Loader2 className="size-4 animate-spin" /> : <ArrowRightLeft className="size-4" />}
           {converting
             ? "Conversion en cours..."
@@ -267,6 +395,7 @@ function ConvertTab() {
               filename={r.filename}
               url={r.url}
               onDelete={() => removeResult(r.id)}
+              accentClassName={styles.cardAccent}
             />
           ))}
         </div>
@@ -283,7 +412,8 @@ function formatCompressionInfo(before: number, after: number): string {
 type CompressQueueItem = { id: string; file: File; level: "leger" | "fort" };
 type CompressResult = { id: string; filename: string; url: string; compressionInfo: string };
 
-function CompressTab() {
+function CompressTab({ color }: { color: ColorKey }) {
+  const styles = COLOR_STYLES[color];
   const [queue, setQueue] = useState<CompressQueueItem[]>([]);
   const [compressing, setCompressing] = useState(false);
   const [compressingId, setCompressingId] = useState<string | null>(null);
@@ -358,6 +488,8 @@ function CompressTab() {
         multiple
         accept="application/pdf"
         label="Glissez-déposez des PDF, ou"
+        accentDragClassName={styles.dropzoneDrag}
+        accentTextClassName={styles.text}
       />
 
       {queue.length > 0 && (
@@ -403,7 +535,11 @@ function CompressTab() {
       )}
 
       <div className="flex items-center gap-3">
-        <Button onClick={handleCompressAll} disabled={queue.length === 0 || compressing} className="w-fit">
+        <Button
+          onClick={handleCompressAll}
+          disabled={queue.length === 0 || compressing}
+          className={cn("w-fit", styles.buttonBg)}
+        >
           {compressing ? <Loader2 className="size-4 animate-spin" /> : <Minimize2 className="size-4" />}
           {compressing
             ? "Compression en cours..."
@@ -420,6 +556,7 @@ function CompressTab() {
               compressionInfo={r.compressionInfo}
               url={r.url}
               onDelete={() => removeResult(r.id)}
+              accentClassName={styles.cardAccent}
             />
           ))}
         </div>
@@ -430,7 +567,8 @@ function CompressTab() {
 
 type MergeResult = { id: string; filename: string; url: string };
 
-function MergeTab() {
+function MergeTab({ color }: { color: ColorKey }) {
+  const styles = COLOR_STYLES[color];
   const [files, setFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useSessionResults<MergeResult>("boulga:converter:merge-results");
@@ -487,7 +625,14 @@ function MergeTab() {
 
   return (
     <div className="flex flex-col gap-4 pt-4">
-      <DropZone onFiles={addFiles} multiple accept="application/pdf" label="Glissez-déposez des PDF, ou" />
+      <DropZone
+        onFiles={addFiles}
+        multiple
+        accept="application/pdf"
+        label="Glissez-déposez des PDF, ou"
+        accentDragClassName={styles.dropzoneDrag}
+        accentTextClassName={styles.text}
+      />
 
       {files.length > 0 && (
         <div className="flex flex-col gap-1.5">
@@ -516,7 +661,11 @@ function MergeTab() {
       )}
 
       <div className="flex items-center gap-3">
-        <Button onClick={handleMerge} disabled={files.length < 2 || loading} className="w-fit">
+        <Button
+          onClick={handleMerge}
+          disabled={files.length < 2 || loading}
+          className={cn("w-fit", styles.buttonBg)}
+        >
           {loading ? <Loader2 className="size-4 animate-spin" /> : <Merge className="size-4" />}
           {loading ? "Fusion en cours..." : "Fusionner"}
         </Button>
@@ -530,6 +679,7 @@ function MergeTab() {
               filename={r.filename}
               url={r.url}
               onDelete={() => removeResult(r.id)}
+              accentClassName={styles.cardAccent}
             />
           ))}
         </div>
@@ -540,7 +690,8 @@ function MergeTab() {
 
 type SplitResult = { id: string; filename: string; url: string };
 
-function SplitTab() {
+function SplitTab({ color }: { color: ColorKey }) {
+  const styles = COLOR_STYLES[color];
   const [file, setFile] = useState<File | null>(null);
   const [pages, setPages] = useState("");
   const [loading, setLoading] = useState(false);
@@ -584,7 +735,13 @@ function SplitTab() {
 
   return (
     <div className="flex flex-col gap-4 pt-4">
-      <DropZone onFiles={handleFiles} accept="application/pdf" label="Glissez-déposez un PDF, ou" />
+      <DropZone
+        onFiles={handleFiles}
+        accept="application/pdf"
+        label="Glissez-déposez un PDF, ou"
+        accentDragClassName={styles.dropzoneDrag}
+        accentTextClassName={styles.text}
+      />
 
       {file && (
         <div className="flex items-center gap-3 rounded-[8px] border bg-card p-3">
@@ -608,7 +765,11 @@ function SplitTab() {
       </div>
 
       <div className="flex items-center gap-3">
-        <Button onClick={handleSplit} disabled={!file || !pages.trim() || loading} className="w-fit">
+        <Button
+          onClick={handleSplit}
+          disabled={!file || !pages.trim() || loading}
+          className={cn("w-fit", styles.buttonBg)}
+        >
           {loading ? <Loader2 className="size-4 animate-spin" /> : <Scissors className="size-4" />}
           {loading ? "Extraction en cours..." : "Extraire"}
         </Button>
@@ -622,87 +783,7 @@ function SplitTab() {
               filename={r.filename}
               url={r.url}
               onDelete={() => removeResult(r.id)}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-type OrganizeResult = { id: string; filename: string; url: string };
-
-function OrganizeTab() {
-  const [file, setFile] = useState<File | null>(null);
-  const [operations, setOperations] = useState<PageOperation[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [results, setResults] = useSessionResults<OrganizeResult>(
-    "boulga:converter:organize-results",
-  );
-
-  function handleFiles(files: FileList) {
-    const f = files[0];
-    if (extOf(f.name) !== "pdf") {
-      toast.error("Seul un fichier PDF peut être organisé.");
-      return;
-    }
-    setFile(f);
-    setOperations([]);
-  }
-
-  function removeResult(id: string) {
-    setResults((prev) => prev.filter((r) => r.id !== id));
-  }
-
-  async function handleApply() {
-    if (!file || operations.length === 0) return;
-    setLoading(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("operations", JSON.stringify(operations));
-      const res = await apiFetch("/api/v1/tools/converter/organize", {
-        method: "POST",
-        body: formData,
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        throw new Error(body?.detail ?? "Échec de l'organisation.");
-      }
-      const result: { url: string; filename: string } = await res.json();
-      setResults((prev) => [...prev, { id: crypto.randomUUID(), ...result }]);
-    } catch (err) {
-      toast.error("Organisation impossible", { description: (err as Error).message });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-4 pt-4">
-      <DropZone onFiles={handleFiles} accept="application/pdf" label="Glissez-déposez un PDF, ou" />
-
-      {file && (
-        <PdfPageThumbnails file={file} onOperationsChange={setOperations} />
-      )}
-
-      {file && (
-        <div className="flex items-center gap-3">
-          <Button onClick={handleApply} disabled={operations.length === 0 || loading} className="w-fit">
-            {loading ? <Loader2 className="size-4 animate-spin" /> : <LayoutGrid className="size-4" />}
-            {loading ? "Application en cours..." : "Appliquer"}
-          </Button>
-        </div>
-      )}
-
-      {results.length > 0 && (
-        <div className="flex flex-col gap-2">
-          {results.map((r) => (
-            <ConversionResultCard
-              key={r.id}
-              filename={r.filename}
-              url={r.url}
-              onDelete={() => removeResult(r.id)}
+              accentClassName={styles.cardAccent}
             />
           ))}
         </div>
@@ -714,7 +795,8 @@ function OrganizeTab() {
 type ProtectMode = "protect" | "unlock";
 type ProtectResult = { id: string; filename: string; url: string };
 
-function ProtectTab() {
+function ProtectTab({ color }: { color: ColorKey }) {
+  const styles = COLOR_STYLES[color];
   const [mode, setMode] = useState<ProtectMode>("protect");
   const [file, setFile] = useState<File | null>(null);
   const [password, setPassword] = useState("");
@@ -771,20 +853,32 @@ function ProtectTab() {
         <button
           type="button"
           onClick={() => setMode("protect")}
-          className={`rounded-[6px] px-3 py-1.5 text-sm ${mode === "protect" ? "bg-white shadow-sm" : "text-muted-foreground"}`}
+          className={cn(
+            "rounded-[6px] px-3 py-1.5 text-sm",
+            mode === "protect" ? "bg-white shadow-sm" : "text-muted-foreground",
+          )}
         >
           Ajouter un mot de passe
         </button>
         <button
           type="button"
           onClick={() => setMode("unlock")}
-          className={`rounded-[6px] px-3 py-1.5 text-sm ${mode === "unlock" ? "bg-white shadow-sm" : "text-muted-foreground"}`}
+          className={cn(
+            "rounded-[6px] px-3 py-1.5 text-sm",
+            mode === "unlock" ? "bg-white shadow-sm" : "text-muted-foreground",
+          )}
         >
           Retirer un mot de passe
         </button>
       </div>
 
-      <DropZone onFiles={handleFiles} accept="application/pdf" label="Glissez-déposez un PDF, ou" />
+      <DropZone
+        onFiles={handleFiles}
+        accept="application/pdf"
+        label="Glissez-déposez un PDF, ou"
+        accentDragClassName={styles.dropzoneDrag}
+        accentTextClassName={styles.text}
+      />
 
       {file && (
         <div className="flex items-center gap-3 rounded-[8px] border bg-card p-3">
@@ -808,7 +902,11 @@ function ProtectTab() {
       </div>
 
       <div className="flex items-center gap-3">
-        <Button onClick={handleSubmit} disabled={!file || !password || loading} className="w-fit">
+        <Button
+          onClick={handleSubmit}
+          disabled={!file || !password || loading}
+          className={cn("w-fit", styles.buttonBg)}
+        >
           {loading ? (
             <Loader2 className="size-4 animate-spin" />
           ) : mode === "protect" ? (
@@ -832,6 +930,7 @@ function ProtectTab() {
               filename={r.filename}
               url={r.url}
               onDelete={() => removeResult(r.id)}
+              accentClassName={styles.cardAccent}
             />
           ))}
         </div>
