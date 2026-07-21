@@ -14,7 +14,7 @@ from app.config import settings
 MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 Mo
 
 IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "webp", "bmp", "gif"}
-DOCUMENT_EXTENSIONS = {"pdf", "docx", "doc", "odt", "txt"}
+DOCUMENT_EXTENSIONS = {"pdf", "docx", "doc", "odt", "txt", "rtf"}
 SPREADSHEET_EXTENSIONS = {"xlsx", "xls", "csv", "ods"}
 PRESENTATION_EXTENSIONS = {"pptx", "ppt", "odp"}
 OFFICE_EXTENSIONS = DOCUMENT_EXTENSIONS | SPREADSHEET_EXTENSIONS | PRESENTATION_EXTENSIONS
@@ -25,6 +25,7 @@ ALLOWED_MIME_BY_EXT: dict[str, set[str]] = {
     "doc": {"application/msword"},
     "odt": {"application/vnd.oasis.opendocument.text"},
     "txt": {"text/plain"},
+    "rtf": {"application/rtf", "text/rtf"},
     "xlsx": {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
     "xls": {"application/vnd.ms-excel"},
     "csv": {"text/csv"},

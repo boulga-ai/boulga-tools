@@ -1,3 +1,4 @@
+import re
 import tempfile
 from pathlib import Path
 from typing import Literal
@@ -22,6 +23,14 @@ router = APIRouter(prefix="/tools/converter", tags=["converter"])
 
 TEMP_BUCKET = "temp"
 SIGNED_URL_TTL = 24 * 60 * 60  # 24h
+
+
+def _safe_stem(filename: str) -> str:
+    """Nom de fichier d'origine, assaini pour servir de nom de sortie par defaut
+    (au lieu du "input.pdf" generique precedent, qui faisait perdre le nom reel)."""
+    stem = Path(filename).stem
+    stem = re.sub(r"[^\w \-]", "_", stem, flags=re.UNICODE).strip()
+    return stem or "document"
 
 
 async def _read_and_validate(file: UploadFile) -> tuple[bytes, str]:
@@ -51,7 +60,7 @@ async def convert_file(
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
-        input_path = tmp_path / f"input.{ext}"
+        input_path = tmp_path / f"{_safe_stem(file.filename or 'document')}.{ext}"
         input_path.write_bytes(content)
 
         try:
@@ -79,9 +88,10 @@ async def compress_file(
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
+        stem = _safe_stem(file.filename or "document")
         input_path = tmp_path / "input.pdf"
         input_path.write_bytes(content)
-        output_path = tmp_path / "compresse.pdf"
+        output_path = tmp_path / f"{stem}.pdf"
 
         try:
             compress_pdf(input_path, output_path, level=level)
@@ -108,6 +118,7 @@ async def merge_files(
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         input_paths = []
+        first_stem = None
         for i, file in enumerate(files):
             try:
                 content, ext = await _read_and_validate(file)
@@ -118,11 +129,13 @@ async def merge_files(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Seuls des fichiers PDF peuvent etre fusionnes.",
                 )
+            if first_stem is None:
+                first_stem = _safe_stem(file.filename or "document")
             input_path = tmp_path / f"input_{i}.pdf"
             input_path.write_bytes(content)
             input_paths.append(input_path)
 
-        output_path = tmp_path / "fusion.pdf"
+        output_path = tmp_path / f"{first_stem}-fusion.pdf"
         try:
             merge_pdfs(input_paths, output_path)
         except Exception as exc:
@@ -150,9 +163,10 @@ async def protect_file(
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
+        stem = _safe_stem(file.filename or "document")
         input_path = tmp_path / "input.pdf"
         input_path.write_bytes(content)
-        output_path = tmp_path / "protege.pdf"
+        output_path = tmp_path / f"{stem}.pdf"
 
         try:
             protect_pdf(input_path, password, output_path)
@@ -179,9 +193,10 @@ async def unlock_file(
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
+        stem = _safe_stem(file.filename or "document")
         input_path = tmp_path / "input.pdf"
         input_path.write_bytes(content)
-        output_path = tmp_path / "deverrouille.pdf"
+        output_path = tmp_path / f"{stem}.pdf"
 
         try:
             unlock_pdf(input_path, password, output_path)
@@ -208,9 +223,10 @@ async def split_file(
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
+        stem = _safe_stem(file.filename or "document")
         input_path = tmp_path / "input.pdf"
         input_path.write_bytes(content)
-        output_path = tmp_path / "extrait.pdf"
+        output_path = tmp_path / f"{stem}-extrait.pdf"
 
         try:
             split_pdf(input_path, pages, output_path)

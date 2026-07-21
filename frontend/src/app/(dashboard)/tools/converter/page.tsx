@@ -37,6 +37,7 @@ const OFFICE_TO_PDF: Record<string, string[]> = {
   docx: ["pdf"],
   doc: ["pdf"],
   odt: ["pdf"],
+  rtf: ["pdf"],
   xlsx: ["pdf"],
   xls: ["pdf"],
   ods: ["pdf"],
