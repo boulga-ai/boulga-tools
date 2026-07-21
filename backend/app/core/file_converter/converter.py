@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Literal
 
 import pikepdf
+from pdf2docx import Converter as Pdf2DocxConverter
 from PIL import Image
 from pypdf import PdfReader, PdfWriter
 from pypdf.errors import PdfReadError, WrongPasswordError
@@ -111,6 +112,26 @@ def _convert_image(input_path: Path, target_format: str, output_dir: Path) -> Pa
     return output_path
 
 
+def _convert_pdf_to_docx(input_path: Path, output_dir: Path) -> Path:
+    """PDF -> DOCX via pdf2docx plutot que LibreOffice : LibreOffice ouvre les PDF dans
+    Draw par defaut, donc `--convert-to docx` echoue silencieusement dans ce sens (code de
+    retour 0, aucun fichier produit). pdf2docx est une bibliotheque dediee a cet usage et
+    produit un texte reellement editable."""
+    output_path = output_dir / f"{input_path.stem}.docx"
+    try:
+        cv = Pdf2DocxConverter(str(input_path))
+        try:
+            cv.convert(str(output_path))
+        finally:
+            cv.close()
+    except Exception as exc:
+        raise ConversionError(f"Echec de la conversion PDF vers Word : {exc}") from exc
+
+    if not output_path.exists():
+        raise ConversionError("La conversion n'a produit aucun fichier de sortie.")
+    return output_path
+
+
 def convert(input_path: Path, target_format: str, output_dir: Path) -> Path:
     """Convertit un fichier vers target_format (sans point). Renvoie le chemin du resultat."""
     target_format = target_format.lower().lstrip(".")
@@ -118,6 +139,9 @@ def convert(input_path: Path, target_format: str, output_dir: Path) -> Path:
 
     if source_ext in IMAGE_EXTENSIONS and target_format in IMAGE_EXTENSIONS | {"pdf"}:
         return _convert_image(input_path, target_format, output_dir)
+
+    if source_ext == "pdf" and target_format == "docx":
+        return _convert_pdf_to_docx(input_path, output_dir)
 
     return _convert_via_libreoffice(input_path, target_format, output_dir)
 
