@@ -43,7 +43,11 @@ def _publish(user_id: str, local_path: Path) -> dict:
     target_name = new_temp_filename(local_path.suffix.lstrip("."))
     storage_path = f"{user_id}/{target_name}"
     upload_file(TEMP_BUCKET, storage_path, local_path.read_bytes(), "application/octet-stream")
-    url = create_signed_url(TEMP_BUCKET, storage_path, SIGNED_URL_TTL)
+    # download_filename force le nom cote serveur (Content-Disposition) : l'attribut HTML
+    # download="..." seul n'est pas fiable sur une URL cross-origin (Supabase Storage).
+    url = create_signed_url(
+        TEMP_BUCKET, storage_path, SIGNED_URL_TTL, download_filename=local_path.name
+    )
     return {"url": url, "filename": local_path.name}
 
 

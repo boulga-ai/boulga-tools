@@ -9,9 +9,15 @@ def upload_file(bucket: str, path: str, content: bytes, content_type: str) -> No
     )
 
 
-def create_signed_url(bucket: str, path: str, expires_in_seconds: int) -> str:
+def create_signed_url(
+    bucket: str, path: str, expires_in_seconds: int, download_filename: str | None = None
+) -> str:
+    """download_filename : force un Content-Disposition cote serveur Supabase avec ce nom.
+    Necessaire car l'attribut HTML download="..." n'est pas fiable pour une URL cross-origin
+    (le navigateur peut l'ignorer et nommer le fichier telecharge d'apres le chemin de l'URL)."""
     client = get_service_client()
-    result = client.storage.from_(bucket).create_signed_url(path, expires_in_seconds)
+    options = {"download": download_filename} if download_filename else None
+    result = client.storage.from_(bucket).create_signed_url(path, expires_in_seconds, options)
     return result.get("signedURL") or result["signedUrl"]
 
 

@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Download, FileText, Pencil, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+import { Download, FileText, Loader2, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -29,7 +30,33 @@ export function ConversionResultCard({
   const [baseDefault, ext] = splitExt(filename);
   const [editing, setEditing] = useState(false);
   const [base, setBase] = useState(baseDefault);
+  const [downloading, setDownloading] = useState(false);
   const downloadName = `${base.trim() || baseDefault}${ext}`;
+
+  // Fetch + blob: plutot qu'un simple <a href download> : le nom choisi ici doit toujours
+  // l'emporter, or un <a> pointant vers une URL cross-origin (Supabase) peut se voir
+  // imposer un nom different par le Content-Disposition du serveur. Un blob: est toujours
+  // "meme origine" du point de vue du navigateur, donc l'attribut download y est fiable.
+  async function handleDownload() {
+    setDownloading(true);
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error();
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = downloadName;
+      a.click();
+      URL.revokeObjectURL(objectUrl);
+    } catch {
+      toast.error("Téléchargement impossible", {
+        description: "Le lien a peut-être expiré.",
+      });
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   return (
     <div
@@ -70,12 +97,10 @@ export function ConversionResultCard({
         )}
         <p className="truncate text-xs text-muted-foreground">{compressionInfo ?? sizeLabel}</p>
       </div>
-      <a href={url} download={downloadName} target="_blank" rel="noreferrer">
-        <Button variant="outline" size="sm">
-          <Download className="size-4" />
-          Télécharger
-        </Button>
-      </a>
+      <Button variant="outline" size="sm" onClick={handleDownload} disabled={downloading}>
+        {downloading ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+        Télécharger
+      </Button>
       <Button
         variant="ghost"
         size="icon-sm"
