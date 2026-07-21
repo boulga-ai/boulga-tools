@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Plus, Trash2, Menu, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { Plus, Trash2, Menu, PanelLeftClose, PanelLeftOpen, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ChatInput } from "@/components/tools/ChatInput";
 import { CopyButton } from "@/components/tools/CopyButton";
@@ -116,6 +116,19 @@ export default function ChatPage() {
     if (lastUser && !isStreaming) sendMessage(lastUser.content);
   }
 
+  function regenerateLast(assistantIndex: number) {
+    if (isStreaming) return;
+    const userMsg = messages[assistantIndex - 1];
+    if (!userMsg || userMsg.role !== "user") return;
+    setMessages((prev) => prev.slice(0, assistantIndex));
+    sendMessage(userMsg.content);
+  }
+
+  const lastAssistantIndex = messages.reduce(
+    (acc, m, idx) => (m.role === "assistant" ? idx : acc),
+    -1,
+  );
+
   const conversationList = (
     <div className="flex h-full w-60 shrink-0 flex-col gap-2 border-r bg-card p-3">
       <div className="flex items-center gap-1.5">
@@ -224,15 +237,28 @@ export default function ChatPage() {
                   </div>
                 </div>
               ) : (
-                <div key={i} className="group flex w-full flex-col gap-1">
+                <div key={i} className="flex w-full flex-col gap-1">
                   <MarkdownContent text={m.content} dense />
-                  <CopyButton
-                    text={m.content}
-                    label="Copier"
-                    variant="ghost"
-                    size="sm"
-                    className="hidden h-6 w-fit px-1.5 text-xs text-muted-foreground group-hover:flex"
-                  />
+                  <div className="flex items-center gap-1">
+                    <CopyButton
+                      text={m.content}
+                      label="Copier"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-fit px-1.5 text-xs text-muted-foreground"
+                    />
+                    {i === lastAssistantIndex && !isStreaming && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => regenerateLast(i)}
+                        className="h-6 w-fit px-1.5 text-xs text-muted-foreground"
+                      >
+                        <RotateCcw className="size-3.5" />
+                        Régénérer
+                      </Button>
+                    )}
+                  </div>
                 </div>
               ),
             )}
