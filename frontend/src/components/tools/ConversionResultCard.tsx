@@ -1,6 +1,13 @@
-import { Download, FileText, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { Download, FileText, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+
+function splitExt(filename: string): [string, string] {
+  const dot = filename.lastIndexOf(".");
+  if (dot <= 0) return [filename, ""];
+  return [filename.slice(0, dot), filename.slice(dot)];
+}
 
 export function ConversionResultCard({
   filename,
@@ -19,6 +26,11 @@ export function ConversionResultCard({
   // Convertir, vert pour Compresser...) — optionnelle, sans effet si non fournie.
   accentClassName?: string;
 }) {
+  const [baseDefault, ext] = splitExt(filename);
+  const [editing, setEditing] = useState(false);
+  const [base, setBase] = useState(baseDefault);
+  const downloadName = `${base.trim() || baseDefault}${ext}`;
+
   return (
     <div
       className={cn(
@@ -28,10 +40,37 @@ export function ConversionResultCard({
     >
       <FileText className="size-5 shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{filename}</p>
+        {editing ? (
+          <div className="flex items-center gap-1">
+            <input
+              autoFocus
+              value={base}
+              onChange={(e) => setBase(e.target.value)}
+              onBlur={() => setEditing(false)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") setEditing(false);
+              }}
+              className="min-w-0 flex-1 rounded-[6px] border border-input bg-white px-1.5 py-0.5 text-sm font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+            />
+            <span className="shrink-0 text-sm text-muted-foreground">{ext}</span>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            title="Renommer avant de télécharger"
+            className="flex max-w-full items-center gap-1 text-left hover:text-bleu-boulga"
+          >
+            <span className="truncate text-sm font-medium">
+              {base}
+              {ext}
+            </span>
+            <Pencil className="size-3 shrink-0 text-muted-foreground" />
+          </button>
+        )}
         <p className="truncate text-xs text-muted-foreground">{compressionInfo ?? sizeLabel}</p>
       </div>
-      <a href={url} download={filename} target="_blank" rel="noreferrer">
+      <a href={url} download={downloadName} target="_blank" rel="noreferrer">
         <Button variant="outline" size="sm">
           <Download className="size-4" />
           Télécharger

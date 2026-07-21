@@ -389,6 +389,18 @@ function ConvertTab({ color }: { color: ColorKey }) {
 
       {results.length > 0 && (
         <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">
+              {results.length} résultat{results.length > 1 ? "s" : ""}
+            </span>
+            <button
+              type="button"
+              onClick={() => setResults([])}
+              className="text-xs font-medium text-muted-foreground hover:text-destructive"
+            >
+              Tout effacer
+            </button>
+          </div>
           {results.map((r) => (
             <ConversionResultCard
               key={r.id}
@@ -549,6 +561,18 @@ function CompressTab({ color }: { color: ColorKey }) {
 
       {results.length > 0 && (
         <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">
+              {results.length} résultat{results.length > 1 ? "s" : ""}
+            </span>
+            <button
+              type="button"
+              onClick={() => setResults([])}
+              className="text-xs font-medium text-muted-foreground hover:text-destructive"
+            >
+              Tout effacer
+            </button>
+          </div>
           {results.map((r) => (
             <ConversionResultCard
               key={r.id}
@@ -673,6 +697,18 @@ function MergeTab({ color }: { color: ColorKey }) {
 
       {results.length > 0 && (
         <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">
+              {results.length} résultat{results.length > 1 ? "s" : ""}
+            </span>
+            <button
+              type="button"
+              onClick={() => setResults([])}
+              className="text-xs font-medium text-muted-foreground hover:text-destructive"
+            >
+              Tout effacer
+            </button>
+          </div>
           {results.map((r) => (
             <ConversionResultCard
               key={r.id}
@@ -777,6 +813,18 @@ function SplitTab({ color }: { color: ColorKey }) {
 
       {results.length > 0 && (
         <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">
+              {results.length} résultat{results.length > 1 ? "s" : ""}
+            </span>
+            <button
+              type="button"
+              onClick={() => setResults([])}
+              className="text-xs font-medium text-muted-foreground hover:text-destructive"
+            >
+              Tout effacer
+            </button>
+          </div>
           {results.map((r) => (
             <ConversionResultCard
               key={r.id}
@@ -924,6 +972,18 @@ function ProtectTab({ color }: { color: ColorKey }) {
 
       {results.length > 0 && (
         <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">
+              {results.length} résultat{results.length > 1 ? "s" : ""}
+            </span>
+            <button
+              type="button"
+              onClick={() => setResults([])}
+              className="text-xs font-medium text-muted-foreground hover:text-destructive"
+            >
+              Tout effacer
+            </button>
+          </div>
           {results.map((r) => (
             <ConversionResultCard
               key={r.id}
