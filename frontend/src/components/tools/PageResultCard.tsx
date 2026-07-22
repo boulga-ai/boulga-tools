@@ -192,6 +192,7 @@ export function PageResultCard({
               template={template}
               accentColorOverride={accentColor}
               darkColorOverride={darkColor}
+              tocLinks
             />
           </div>
           <div className="flex shrink-0 flex-col gap-3 border-t p-4">

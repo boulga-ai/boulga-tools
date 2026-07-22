@@ -15,30 +15,40 @@ const HEADING_SIZE_CLASSES = ["text-xl font-semibold mt-4", "text-lg font-semibo
 
 function BlockView({
   block,
+  index,
   coverStyle,
   letterBanner,
   accentHex,
   darkHex,
   isCv,
+  headings,
+  tocLinks,
 }: {
   block: DocBlock;
+  index: number;
   coverStyle: CoverStyle;
   letterBanner: boolean;
   accentHex: string;
   darkHex: string;
   isCv: boolean;
+  headings: { text: string; level: number; anchor: string }[];
+  tocLinks: boolean;
 }) {
   switch (block.type) {
     case "heading": {
       const level = Math.min(Math.max(Number(block.level) || 1, 1), 4);
       const text = asStr(block.text);
+      // Ancre posee uniquement quand tocLinks est actif (modale "Agrandir") : la
+      // miniature de carte reste toujours montee en parallele avec les memes blocs,
+      // poser l'id partout dupliquerait des ids dans le DOM des que la modale s'ouvre.
+      const anchor = tocLinks ? `heading-${index}` : undefined;
       if (isCv) {
         // Miroir de _render_heading_in_container (renderer.py) : majuscules, gras,
         // couleur d'accent du template — jamais le style "titre" generique utilise
         // ailleurs (pro_doc/academic/lettre).
         const Tag = level === 1 ? "h2" : level === 2 ? "h3" : level === 3 ? "h4" : "h5";
         return (
-          <Tag className="mt-2.5 text-sm font-bold uppercase tracking-wide" style={{ color: accentHex }}>
+          <Tag id={anchor} className="mt-2.5 text-sm font-bold uppercase tracking-wide" style={{ color: accentHex }}>
             {text}
           </Tag>
         );
@@ -47,10 +57,10 @@ function BlockView({
       // couleur sombre (richesse du palier ignoree ici, voir note du fichier).
       const className = HEADING_SIZE_CLASSES[level - 1];
       const color = level === 1 ? accentHex : darkHex;
-      if (level === 1) return <h2 className={className} style={{ color }}>{text}</h2>;
-      if (level === 2) return <h3 className={className} style={{ color }}>{text}</h3>;
-      if (level === 3) return <h4 className={className} style={{ color }}>{text}</h4>;
-      return <h5 className={className} style={{ color }}>{text}</h5>;
+      if (level === 1) return <h2 id={anchor} className={className} style={{ color }}>{text}</h2>;
+      if (level === 2) return <h3 id={anchor} className={className} style={{ color }}>{text}</h3>;
+      if (level === 3) return <h4 id={anchor} className={className} style={{ color }}>{text}</h4>;
+      return <h5 id={anchor} className={className} style={{ color }}>{text}</h5>;
     }
     case "paragraph":
       return <p className="text-sm leading-relaxed">{asStr(block.text)}</p>;
@@ -278,6 +288,24 @@ function BlockView({
       );
     }
     case "table_of_contents":
+      // Cliquable uniquement dans la modale (tocLinks) — dans la miniature de carte
+      // (recadree, pointer-events-none), un lien resterait de toute facon inerte.
+      if (tocLinks && headings.length > 0) {
+        return (
+          <nav className="flex flex-col gap-0.5">
+            {headings.map((h) => (
+              <a
+                key={h.anchor}
+                href={`#${h.anchor}`}
+                style={{ paddingLeft: `${(h.level - 1) * 14}px` }}
+                className="truncate text-sm text-muted-foreground hover:text-foreground hover:underline"
+              >
+                {h.text}
+              </a>
+            ))}
+          </nav>
+        );
+      }
       return <p className="text-sm italic text-muted-foreground">[Sommaire — généré automatiquement au téléchargement]</p>;
     case "bibliography":
       return (
@@ -350,6 +378,7 @@ export function DocumentRenderer({
   className,
   accentColorOverride,
   darkColorOverride,
+  tocLinks = false,
 }: {
   blocks: DocBlock[];
   template?: string;
@@ -361,6 +390,11 @@ export function DocumentRenderer({
   // renderer.render(accent_override, dark_override).
   accentColorOverride?: string;
   darkColorOverride?: string;
+  // Active les ancres sur les headings et rend le bloc table_of_contents cliquable
+  // (voir BlockView) — reserve a la modale "Agrandir" (PageResultCard), jamais a la
+  // miniature de carte qui reste montee en parallele avec les memes blocs (sinon
+  // ids dupliques dans le DOM).
+  tocLinks?: boolean;
 }) {
   const baseStyle = getTemplateStyle(template);
   const style = {
@@ -372,6 +406,18 @@ export function DocumentRenderer({
   // DOCUMENT_SCHEMAS) — signal fiable pour choisir la mise en forme des titres
   // (majuscules, voir BlockView) sans avoir a faire remonter le doc_type ici.
   const isCv = blocks.some((b) => b.type === "contact");
+  // Sommaire cliquable (pro_doc/academic) : liste plate des headings, ancre stable
+  // basee sur la position du bloc dans le document — calculee une seule fois,
+  // reutilisee pour l'ancre posee sur chaque heading ET pour le bloc
+  // table_of_contents lui-meme.
+  const headings = blocks
+    .map((b, i) => ({ block: b, index: i }))
+    .filter(({ block }) => block.type === "heading")
+    .map(({ block, index }) => ({
+      text: asStr(block.text),
+      level: Math.min(Math.max(Number(block.level) || 1, 1), 4),
+      anchor: `heading-${index}`,
+    }));
 
   if (style.cvSidebar) {
     const sidebarBlocks = blocks.filter((b) => CV_SIDEBAR_BLOCK_TYPES.has(b.type));
@@ -388,11 +434,14 @@ export function DocumentRenderer({
             <BlockView
               key={i}
               block={block}
+              index={i}
               coverStyle={style.coverStyle}
               letterBanner={style.letterBanner}
               accentHex={style.accentHex}
               darkHex={style.darkHex}
               isCv={isCv}
+              headings={headings}
+              tocLinks={tocLinks}
             />
           ))}
         </div>
@@ -409,11 +458,14 @@ export function DocumentRenderer({
         <BlockView
           key={i}
           block={block}
+          index={i}
           coverStyle={style.coverStyle}
           letterBanner={style.letterBanner}
           accentHex={style.accentHex}
           darkHex={style.darkHex}
           isCv={isCv}
+          headings={headings}
+          tocLinks={tocLinks}
         />
       ))}
     </div>
