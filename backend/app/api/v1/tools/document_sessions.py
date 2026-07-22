@@ -8,7 +8,6 @@ JSON d'etat entre deux visites."""
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.document_sessions import create_session, get_session, list_sessions, update_session
-from app.core.rate_limit import rate_limit_dep
 from app.dependencies import get_current_user
 from app.models.document_sessions import CreateSessionRequest, UpdateSessionRequest
 
@@ -16,9 +15,12 @@ from app.models.document_sessions import CreateSessionRequest, UpdateSessionRequ
 # (par opposition a CV/Lettre, qui restent un brouillon local par navigateur).
 VALID_TOOLS = {"academic", "pro_doc"}
 
-router = APIRouter(
-    prefix="/tools/generators/{tool}", tags=["document_sessions"], dependencies=[Depends(rate_limit_dep)]
-)
+# Pas de rate_limit_dep ici (contrairement a documents_engine.py) : ce routeur ne fait
+# que persister du JSON de bookkeeping (nom de projet, work_state), jamais d'appel LLM
+# — le budget de 10 appels/minute pense pour un abus de quota gratuit se declenchait a
+# tort ici (409/429 en rafale sur un simple renommage + sauvegarde debounced), sans
+# aucun rapport avec un cout reel a proteger.
+router = APIRouter(prefix="/tools/generators/{tool}", tags=["document_sessions"])
 
 
 def _check_tool(tool: str) -> None:

@@ -26,8 +26,12 @@ def _allowed_block_types(doc_type: str, template: str | None = None) -> set[str]
 
 def repair_block(raw: dict) -> Block | None:
     """Construit un bloc a partir d'un dict brut issu du LLM. Si des champs texte/liste
-    requis manquent, comble avec des valeurs vides plutot que d'echouer. Si le type est
-    inconnu ou la structure irrecuperable, renvoie None — le bloc est alors ignore."""
+    requis manquent, comble avec des valeurs vides plutot que d'echouer. Si un champ
+    optionnel de type dict/liste est present mais du mauvais type (le LLM envoie parfois
+    une chaine libre la ou un dict structure est attendu — vu en prod sur
+    CoverPageBlock.extra), reinitialise ce champ a une valeur par defaut plutot que de
+    faire echouer tout le bloc pour un champ secondaire. Si le type est inconnu ou la
+    structure irrecuperable malgre ca, renvoie None — le bloc est alors ignore."""
     if not isinstance(raw, dict):
         return None
     model_cls = BLOCK_REGISTRY.get(raw.get("type"))
@@ -39,11 +43,19 @@ def repair_block(raw: dict) -> Block | None:
     except ValidationError:
         repaired = dict(raw)
         for field_name, field in model_cls.model_fields.items():
-            if field_name in repaired or not field.is_required():
+            origin = getattr(field.annotation, "__origin__", None)
+            if field_name not in repaired:
+                if not field.is_required():
+                    continue
+                if field.annotation is str:
+                    repaired[field_name] = ""
+                elif origin is list:
+                    repaired[field_name] = []
                 continue
-            if field.annotation is str:
-                repaired[field_name] = ""
-            elif getattr(field.annotation, "__origin__", None) is list:
+            value = repaired[field_name]
+            if origin is dict and not isinstance(value, dict):
+                repaired[field_name] = {}
+            elif origin is list and not isinstance(value, list):
                 repaired[field_name] = []
         try:
             return model_cls.model_validate(repaired)
