@@ -19,10 +19,8 @@ from app.core.document_engine.blocks import Block
 from app.core.document_engine.document import Document as EngineDocument
 from app.core.document_engine.templates._style_utils import (
     BLANC,
-    BLEU_BOULGA,
     GRIS_BANDE,
     GRIS_TEXTE,
-    MARINE,
     add_bottom_border,
     add_left_border,
     add_page_number_field,
@@ -132,7 +130,21 @@ TEMPLATE_STYLES: dict[str, TemplateStyle] = {
         font_name="Arial",
     ),
     "pro_minimal": TemplateStyle(
-        doc_type="pro_doc", label="Minimal", cover_page_style="minimal", font_name="Arial"
+        doc_type="pro_doc",
+        label="Minimal",
+        cover_page_style="minimal",
+        font_name="Arial",
+        accent_hex="45607A",
+        dark_hex="37474F",
+    ),
+    "pro_moderne": TemplateStyle(
+        doc_type="pro_doc",
+        label="Moderne",
+        cover_page_style="banner",
+        numbered_headings=False,
+        font_name="Arial",
+        accent_hex="0E7C6B",
+        dark_hex="0B4A3D",
     ),
     "academic_formal": TemplateStyle(
         doc_type="academic",
@@ -143,7 +155,20 @@ TEMPLATE_STYLES: dict[str, TemplateStyle] = {
         font_name="Times New Roman",
     ),
     "academic_clean": TemplateStyle(
-        doc_type="academic", label="Épuré", cover_page_style="clean", font_name="Arial"
+        doc_type="academic",
+        label="Épuré",
+        cover_page_style="clean",
+        font_name="Arial",
+        accent_hex="37474F",
+        dark_hex="263238",
+    ),
+    "academic_classique": TemplateStyle(
+        doc_type="academic",
+        label="Classique",
+        cover_page_style="clean",
+        font_name="Times New Roman",
+        accent_hex="7B2D26",
+        dark_hex="4A1B17",
     ),
 }
 
@@ -173,10 +198,10 @@ def _render_heading(doc: DocxDocument, block, style: TemplateStyle, richness: Ri
         add_bottom_border(heading, style.accent_hex if richness == "premium" else style.dark_hex)
 
 
-def _render_table(container: Container, block, richness: Richness) -> None:
+def _render_table(container: Container, block, richness: Richness, style: TemplateStyle) -> None:
     table = container.add_table(rows=1, cols=max(len(block.headers), 1))
     set_table_borders(table)
-    header_color = "0B1F3A" if richness == "sobre" else "1565C0"
+    header_color = style.dark_hex if richness == "sobre" else style.accent_hex
     for cell, header in zip(table.rows[0].cells, block.headers):
         set_cell_background(cell, header_color)
         set_cell_margins(cell, top_cm=0.2, left_cm=0.25, bottom_cm=0.2, right_cm=0.25)
@@ -199,40 +224,43 @@ def _render_table(container: Container, block, richness: Richness) -> None:
         caption_run.font.size = Pt(9)
 
 
-def _render_quote(container: Container, block) -> None:
+def _render_quote(container: Container, block, style: TemplateStyle) -> None:
     p = container.add_paragraph()
     p.paragraph_format.left_indent = Cm(1)
     p.paragraph_format.space_before = Pt(6)
     p.paragraph_format.space_after = Pt(6)
     set_paragraph_shading(p, "F2F5FA")
-    add_left_border(p, "1565C0", size=18)
+    add_left_border(p, style.accent_hex, size=18)
     run = p.add_run(block.text)
     run.italic = True
 
 
-def _render_toc(doc: DocxDocument, richness: Richness) -> None:
+def _render_toc(doc: DocxDocument, richness: Richness, style: TemplateStyle) -> None:
     toc_heading = doc.add_paragraph()
     toc_run = toc_heading.add_run("SOMMAIRE" if richness != "sobre" else "Sommaire")
     toc_run.font.bold = True
     if richness != "sobre":
-        toc_run.font.color.rgb = BLEU_BOULGA
+        toc_run.font.color.rgb = RGBColor.from_string(style.accent_hex)
     add_table_of_contents(doc)
     doc.add_page_break()
 
 
-def _render_bibliography(doc: DocxDocument, block) -> None:
-    doc.add_heading("Bibliographie", level=1)
+def _render_bibliography(doc: DocxDocument, block, style: TemplateStyle) -> None:
+    heading = doc.add_heading("Bibliographie", level=1)
+    if heading.runs:
+        heading.runs[0].font.color.rgb = RGBColor.from_string(style.dark_hex)
     for entry in block.entries:
         doc.add_paragraph(entry, style="List Bullet")
 
 
-def _render_cover_page_banner(doc: DocxDocument, block, richness: Richness) -> None:
-    """pro_corporate : bandeau colore pleine largeur, poursuit directement dans le
-    contenu (pas de saut de page — le bandeau tient lieu d'en-tete de premiere page)."""
+def _render_cover_page_banner(doc: DocxDocument, block, richness: Richness, style: TemplateStyle) -> None:
+    """pro_corporate/pro_moderne : bandeau colore pleine largeur, poursuit directement
+    dans le contenu (pas de saut de page — le bandeau tient lieu d'en-tete de premiere
+    page)."""
     header_table = doc.add_table(rows=1, cols=1)
     remove_table_borders(header_table)
     cell = header_table.rows[0].cells[0]
-    set_cell_background(cell, "1565C0" if richness != "sobre" else "0B1F3A")
+    set_cell_background(cell, style.accent_hex if richness != "sobre" else style.dark_hex)
     set_cell_margins(cell, top_cm=0.5, left_cm=0.8, bottom_cm=0.5, right_cm=0.8)
     cell.paragraphs[0].text = ""
     title_p = cell.paragraphs[0]
@@ -250,7 +278,7 @@ def _render_cover_page_banner(doc: DocxDocument, block, richness: Richness) -> N
     doc.add_paragraph()
 
 
-def _render_cover_page_minimal(doc: DocxDocument, block) -> None:
+def _render_cover_page_minimal(doc: DocxDocument, block, style: TemplateStyle) -> None:
     """pro_minimal : page de titre dediee mais sobre — pas de bloc couleur, juste le
     titre et les metadonnees centres, sur leur propre page (au lieu de n'avoir aucune
     page de garde comme avant : chaque template pro_doc en a desormais une)."""
@@ -261,7 +289,7 @@ def _render_cover_page_minimal(doc: DocxDocument, block) -> None:
     title_run = title_p.add_run(block.title)
     title_run.font.size = Pt(22)
     title_run.font.bold = True
-    title_run.font.color.rgb = MARINE
+    title_run.font.color.rgb = RGBColor.from_string(style.dark_hex)
 
     meta_bits = [block.author, block.institution, block.date, *block.extra.values()]
     meta_line = " · ".join(b for b in meta_bits if b)
@@ -275,10 +303,10 @@ def _render_cover_page_minimal(doc: DocxDocument, block) -> None:
     doc.add_page_break()
 
 
-def _render_cover_page_academic(doc: DocxDocument, block) -> None:
-    """academic_formal / academic_clean : page de garde academique classique centree —
-    seule differe la marge de reliure, deja geree au niveau section (style.margins_cm),
-    pas ici."""
+def _render_cover_page_academic(doc: DocxDocument, block, style: TemplateStyle) -> None:
+    """academic_formal / academic_clean / academic_classique : page de garde
+    academique classique centree — seule differe la marge de reliure, deja geree au
+    niveau section (style.margins_cm), pas ici."""
     for _ in range(4):
         doc.add_paragraph()
     if block.institution:
@@ -292,7 +320,7 @@ def _render_cover_page_academic(doc: DocxDocument, block) -> None:
     title_run = title_p.add_run(block.title)
     title_run.font.size = Pt(20)
     title_run.font.bold = True
-    title_run.font.color.rgb = MARINE
+    title_run.font.color.rgb = RGBColor.from_string(style.dark_hex)
 
     for _ in range(4):
         doc.add_paragraph()
@@ -317,11 +345,11 @@ def _render_cover_page_academic(doc: DocxDocument, block) -> None:
 
 def _render_cover_page(doc: DocxDocument, block, style: TemplateStyle, richness: Richness) -> None:
     if style.cover_page_style == "banner":
-        _render_cover_page_banner(doc, block, richness)
+        _render_cover_page_banner(doc, block, richness, style)
     elif style.cover_page_style == "minimal":
-        _render_cover_page_minimal(doc, block)
+        _render_cover_page_minimal(doc, block, style)
     else:  # "formal" ou "clean" — meme composition academique
-        _render_cover_page_academic(doc, block)
+        _render_cover_page_academic(doc, block, style)
 
 
 # --- Blocs lettre --------------------------------------------------------------------
@@ -729,9 +757,9 @@ def _render_linear(doc: DocxDocument, blocks: list[Block], style: TemplateStyle,
             for item in block.items:
                 doc.add_paragraph(item, style="List Number")
         elif block.type == "table":
-            _render_table(doc, block, richness)
+            _render_table(doc, block, richness, style)
         elif block.type == "quote":
-            _render_quote(doc, block)
+            _render_quote(doc, block, style)
         elif block.type == "spacer":
             doc.add_paragraph()
         elif block.type == "page_break":
@@ -739,9 +767,9 @@ def _render_linear(doc: DocxDocument, blocks: list[Block], style: TemplateStyle,
         elif block.type == "cover_page":
             _render_cover_page(doc, block, style, richness)
         elif block.type == "table_of_contents":
-            _render_toc(doc, richness)
+            _render_toc(doc, richness, style)
         elif block.type == "bibliography":
-            _render_bibliography(doc, block)
+            _render_bibliography(doc, block, style)
         elif block.type == "letter_header":
             _render_letter_header(doc, block, style)
         elif block.type == "subject":

@@ -297,8 +297,8 @@ function BlockView({
               <a
                 key={h.anchor}
                 href={`#${h.anchor}`}
-                style={{ paddingLeft: `${(h.level - 1) * 14}px` }}
-                className="truncate text-sm text-muted-foreground hover:text-foreground hover:underline"
+                style={{ paddingLeft: `${(h.level - 1) * 14}px`, color: accentHex }}
+                className="truncate text-sm hover:underline"
               >
                 {h.text}
               </a>
@@ -308,9 +308,17 @@ function BlockView({
       }
       return <p className="text-sm italic text-muted-foreground">[Sommaire — généré automatiquement au téléchargement]</p>;
     case "bibliography":
+      // isCv (Publications, cv_academique) reste neutre — miroir de
+      // _render_bibliography_in_container (renderer.py), qui ne colore jamais ce
+      // libelle contrairement a _render_bibliography (pro_doc/academic).
       return (
         <div className="mt-2">
-          <p className="text-xs font-medium uppercase text-muted-foreground">Bibliographie</p>
+          <p
+            className="text-xs font-medium uppercase text-muted-foreground"
+            style={isCv ? undefined : { color: darkHex }}
+          >
+            {isCv ? "Publications" : "Bibliographie"}
+          </p>
           <ul className="list-disc pl-5 text-sm">
             {asArr(block.entries).map((e, i) => (
               <li key={i}>{asStr(e)}</li>

@@ -29,7 +29,8 @@ function relativeDate(iso: string): string {
 
 const PRO_TEMPLATES = [
   { value: "pro_corporate", label: "Corporate", description: "En-tête Bleu Boulga, sommaire, pied de page confidentiel." },
-  { value: "pro_minimal", label: "Minimal", description: "Sobre, sans couleurs, universel." },
+  { value: "pro_minimal", label: "Minimal", description: "Sobre, teinte ardoise discrète, universel." },
+  { value: "pro_moderne", label: "Moderne", description: "Bandeau émeraude, structure simple, ton contemporain." },
 ];
 
 const DOC_TYPES = [

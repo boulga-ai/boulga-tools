@@ -42,9 +42,11 @@ export const TEMPLATE_STYLES: Record<string, TemplateStyleInfo> = {
   letter_concours: { cvSidebar: false, letterBanner: false, coverStyle: null, fontFamily: TIMES, accentHex: "#37474F", darkHex: "#263238" },
   letter_academique: { cvSidebar: false, letterBanner: false, coverStyle: null, fontFamily: TIMES, accentHex: "#333333", darkHex: "#1A1A1A" },
   pro_corporate: { cvSidebar: false, letterBanner: false, coverStyle: "banner", fontFamily: ARIAL, accentHex: BLEU_BOULGA, darkHex: MARINE },
-  pro_minimal: { cvSidebar: false, letterBanner: false, coverStyle: "minimal", fontFamily: ARIAL, accentHex: BLEU_BOULGA, darkHex: MARINE },
+  pro_minimal: { cvSidebar: false, letterBanner: false, coverStyle: "minimal", fontFamily: ARIAL, accentHex: "#45607A", darkHex: "#37474F" },
+  pro_moderne: { cvSidebar: false, letterBanner: false, coverStyle: "banner", fontFamily: ARIAL, accentHex: "#0E7C6B", darkHex: "#0B4A3D" },
   academic_formal: { cvSidebar: false, letterBanner: false, coverStyle: "formal", fontFamily: TIMES, accentHex: BLEU_BOULGA, darkHex: MARINE },
-  academic_clean: { cvSidebar: false, letterBanner: false, coverStyle: "clean", fontFamily: ARIAL, accentHex: BLEU_BOULGA, darkHex: MARINE },
+  academic_clean: { cvSidebar: false, letterBanner: false, coverStyle: "clean", fontFamily: ARIAL, accentHex: "#37474F", darkHex: "#263238" },
+  academic_classique: { cvSidebar: false, letterBanner: false, coverStyle: "clean", fontFamily: TIMES, accentHex: "#7B2D26", darkHex: "#4A1B17" },
 };
 
 export function getTemplateStyle(template: string | undefined): TemplateStyleInfo {

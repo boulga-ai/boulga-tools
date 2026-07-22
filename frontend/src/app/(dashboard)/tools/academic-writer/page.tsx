@@ -28,7 +28,8 @@ function relativeDate(iso: string): string {
 
 const ACADEMIC_TEMPLATES = [
   { value: "academic_formal", label: "Formel", description: "Page de garde, sommaire, numérotation, marges reliure." },
-  { value: "academic_clean", label: "Épurée", description: "Page de garde simple, minimaliste." },
+  { value: "academic_clean", label: "Épurée", description: "Page de garde simple, teinte anthracite discrète." },
+  { value: "academic_classique", label: "Classique", description: "Times New Roman, page de garde sobre, teinte bordeaux." },
 ];
 
 const TYPES = [
