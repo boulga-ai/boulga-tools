@@ -97,16 +97,22 @@ DEFAULT_ROUTING: dict[str, dict[str, list[str] | None]] = {
         "goutte_source": ["x-ai/grok-4.3", "google/gemini-3.5-flash"],
         "fleuve_ocean": ["anthropic/claude-sonnet-4.6"],
     },
-    # 2 candidats par groupe : [0] = competence "standard", [1] = competence
-    # "expert" (voir resolve_model). Expert appelle un modele sensiblement plus
-    # cher (Opus a fleuve_ocean) — choix economique du user, pas neutre en cout.
+    # Disponibles des l'Introduction (essai gratuit), meme logique que cv_writer/
+    # cover_letter : le quota downloads (0 en introduction) bloque deja nativement le
+    # telechargement, generer/previsualiser reste libre. Le mot-quota mensuel
+    # (app/core/quota.py) borne deja le cout d'un free-tier meme sur un document
+    # academique long segmente — aucune restriction de segmentation supplementaire
+    # requise ici. 2 candidats par groupe payant : [0] = competence "standard",
+    # [1] = competence "expert" (voir resolve_model). Expert appelle un modele
+    # sensiblement plus cher (Opus a fleuve_ocean) — choix economique du user, pas
+    # neutre en cout.
     "pro_doc_writer": {
-        "introduction": None,
+        "introduction": ["x-ai/grok-4.3", "deepseek/deepseek-v4-flash"],
         "goutte_source": ["x-ai/grok-4.3", "google/gemini-3.5-flash"],
         "fleuve_ocean": ["anthropic/claude-sonnet-4.6", "anthropic/claude-opus-4.6"],
     },
     "academic_writer": {
-        "introduction": None,
+        "introduction": ["x-ai/grok-4.3", "deepseek/deepseek-v4-flash"],
         "goutte_source": ["x-ai/grok-4.3", "google/gemini-3.5-flash"],
         "fleuve_ocean": ["anthropic/claude-sonnet-4.6", "anthropic/claude-opus-4.6"],
     },

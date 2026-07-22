@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ToolLayout } from "@/components/tools/ToolLayout";
 import { DocumentWorkspace } from "@/components/tools/DocumentWorkspace";
-import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { apiFetch } from "@/lib/api";
@@ -80,7 +79,12 @@ type SessionSummary = Omit<ProDocSession, "work_state"> & { updated_at: string }
 
 export default function ProDocWriterPage() {
   const { profile } = useAuth();
-  const available = profile ? profile.current_tier !== "introduction" : false;
+  // Introduction (essai gratuit) a desormais acces a l'outil lui-meme (voir
+  // backend/app/core/llm/router.py) — seul le telechargement reste reserve a un
+  // abonnement (quota downloads=0 en introduction, bloque nativement au moment du
+  // rendu, voir DocumentWorkspace/PageResultCard.handleDownload). Meme logique que
+  // cv-writer/cover-letter.
+  const isIntroduction = profile?.current_tier === "introduction";
   const pendingOutline = useToolStore((s) => s.pendingOutline);
   const setPendingOutline = useToolStore((s) => s.setPendingOutline);
   const isDesktop = useMediaQuery("(min-width: 1024px)");
@@ -94,7 +98,6 @@ export default function ProDocWriterPage() {
   const saveTimeouts = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   useEffect(() => {
-    if (!available) return;
     apiFetch(SESSIONS_URL).then((res) => {
       if (!res.ok) {
         setLoading(false);
@@ -138,7 +141,7 @@ export default function ProDocWriterPage() {
       });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [available]);
+  }, []);
 
   async function refreshSessions() {
     const res = await apiFetch(SESSIONS_URL);
@@ -213,27 +216,6 @@ export default function ProDocWriterPage() {
     );
   }
 
-  if (!available) {
-    return (
-      <ToolLayout
-        title="Document professionnel"
-        description="Décrivez le contenu, l'IA structure et vous propose — vous générez quand vous voulez."
-        badge={
-          <span className="w-fit rounded-[4px] bg-blue-50 px-2 py-0.5 text-xs font-medium text-bleu-boulga">
-            Dès le palier Goutte
-          </span>
-        }
-      >
-        <div className="flex flex-col items-center gap-3 rounded-[12px] border border-dashed p-12 text-center text-muted-foreground">
-          <p>Cet outil nécessite un abonnement à partir du palier Goutte.</p>
-          <a href="/settings">
-            <Button variant="outline">Voir les paliers</Button>
-          </a>
-        </div>
-      </ToolLayout>
-    );
-  }
-
   if (loading) {
     return (
       <ToolLayout title="Document professionnel" description="Chargement...">
@@ -249,7 +231,12 @@ export default function ProDocWriterPage() {
   // sidebar/Sheet separee ici.
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="flex items-center gap-2 border-b bg-card px-4 py-2.5 lg:px-6">
+      <div className="flex flex-col gap-1.5 border-b bg-card px-4 py-2.5 lg:px-6">
+        {isIntroduction && (
+          <span className="w-fit rounded-[4px] bg-blue-50 px-2 py-0.5 text-xs font-medium text-bleu-boulga">
+            Essai gratuit — téléchargement dès le palier Goutte
+          </span>
+        )}
         <span className="font-medium">Document professionnel</span>
       </div>
 
