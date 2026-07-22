@@ -11,31 +11,46 @@ function asArr(v: unknown): unknown[] {
   return Array.isArray(v) ? v : [];
 }
 
-const HEADING_CLASSES = [
-  "text-xl font-semibold text-marine mt-4",
-  "text-lg font-semibold text-marine mt-3",
-  "text-base font-semibold mt-2",
-  "text-sm font-semibold mt-2",
-];
+const HEADING_SIZE_CLASSES = ["text-xl font-semibold mt-4", "text-lg font-semibold mt-3", "text-base font-semibold mt-2", "text-sm font-semibold mt-2"];
 
 function BlockView({
   block,
   coverStyle,
   letterBanner,
+  accentHex,
+  darkHex,
+  isCv,
 }: {
   block: DocBlock;
   coverStyle: CoverStyle;
   letterBanner: boolean;
+  accentHex: string;
+  darkHex: string;
+  isCv: boolean;
 }) {
   switch (block.type) {
     case "heading": {
       const level = Math.min(Math.max(Number(block.level) || 1, 1), 4);
       const text = asStr(block.text);
-      const className = HEADING_CLASSES[level - 1];
-      if (level === 1) return <h2 className={className}>{text}</h2>;
-      if (level === 2) return <h3 className={className}>{text}</h3>;
-      if (level === 3) return <h4 className={className}>{text}</h4>;
-      return <h5 className={className}>{text}</h5>;
+      if (isCv) {
+        // Miroir de _render_heading_in_container (renderer.py) : majuscules, gras,
+        // couleur d'accent du template — jamais le style "titre" generique utilise
+        // ailleurs (pro_doc/academic/lettre).
+        const Tag = level === 1 ? "h2" : level === 2 ? "h3" : level === 3 ? "h4" : "h5";
+        return (
+          <Tag className="mt-2.5 text-sm font-bold uppercase tracking-wide" style={{ color: accentHex }}>
+            {text}
+          </Tag>
+        );
+      }
+      // Miroir de _render_heading : niveau 1 en couleur d'accent, niveaux suivants en
+      // couleur sombre (richesse du palier ignoree ici, voir note du fichier).
+      const className = HEADING_SIZE_CLASSES[level - 1];
+      const color = level === 1 ? accentHex : darkHex;
+      if (level === 1) return <h2 className={className} style={{ color }}>{text}</h2>;
+      if (level === 2) return <h3 className={className} style={{ color }}>{text}</h3>;
+      if (level === 3) return <h4 className={className} style={{ color }}>{text}</h4>;
+      return <h5 className={className} style={{ color }}>{text}</h5>;
     }
     case "paragraph":
       return <p className="text-sm leading-relaxed">{asStr(block.text)}</p>;
@@ -64,7 +79,7 @@ function BlockView({
             <thead>
               <tr>
                 {headers.map((h, i) => (
-                  <th key={i} className="bg-bleu-boulga px-2 py-1.5 text-left font-medium text-white">
+                  <th key={i} className="px-2 py-1.5 text-left font-medium text-white" style={{ backgroundColor: accentHex }}>
                     {h}
                   </th>
                 ))}
@@ -88,7 +103,10 @@ function BlockView({
     }
     case "quote":
       return (
-        <blockquote className="border-l-4 border-bleu-boulga bg-blue-50/60 py-1.5 pl-3 text-sm italic text-muted-foreground">
+        <blockquote
+          className="bg-blue-50/60 py-1.5 pl-3 text-sm italic text-muted-foreground"
+          style={{ borderLeft: `4px solid ${accentHex}` }}
+        >
           {asStr(block.text)}
         </blockquote>
       );
@@ -107,8 +125,10 @@ function BlockView({
       ].filter(Boolean);
       return (
         <div>
-          <h2 className="text-xl font-semibold text-marine">{asStr(block.full_name) || "—"}</h2>
-          {block.title ? <p className="text-bleu-boulga">{asStr(block.title)}</p> : null}
+          <h2 className="text-xl font-semibold" style={{ color: darkHex }}>
+            {asStr(block.full_name) || "—"}
+          </h2>
+          {block.title ? <p style={{ color: accentHex }}>{asStr(block.title)}</p> : null}
           <p className="text-xs text-muted-foreground">{bits.join(" · ")}</p>
           {civilBits.length > 0 && <p className="text-xs text-muted-foreground">{civilBits.join(" · ")}</p>}
         </div>
@@ -120,7 +140,7 @@ function BlockView({
       const period = [asStr(block.start), asStr(block.end) || "présent"].filter(Boolean).join(" – ");
       return (
         <div className="mt-2">
-          <p className="text-sm font-medium">
+          <p className="text-sm font-semibold">
             {asStr(block.position)}
             {block.company ? ` — ${asStr(block.company)}` : ""}
           </p>
@@ -142,7 +162,7 @@ function BlockView({
     case "education":
       return (
         <div className="mt-2">
-          <p className="text-sm font-medium">
+          <p className="text-sm font-semibold">
             {asStr(block.degree)}
             {block.institution ? ` — ${asStr(block.institution)}` : ""}
           </p>
@@ -182,7 +202,7 @@ function BlockView({
       const dateLine = [asStr(block.place), asStr(block.date)].filter(Boolean).join(", ");
       if (letterBanner) {
         return (
-          <div className="-m-5 mb-2 flex flex-col gap-0.5 bg-marine px-5 py-4 text-white">
+          <div className="-m-5 mb-2 flex flex-col gap-0.5 px-5 py-4 text-white" style={{ backgroundColor: darkHex }}>
             <p className="text-lg font-semibold">{asStr(block.sender_name)}</p>
             {contact.map((c, i) => (
               <p key={i} className="text-xs text-white/80">
@@ -212,7 +232,11 @@ function BlockView({
       );
     }
     case "subject":
-      return <p className="font-medium text-bleu-boulga">{asStr(block.text)}</p>;
+      return (
+        <p className="font-medium" style={{ color: accentHex }}>
+          {asStr(block.text)}
+        </p>
+      );
     case "signature":
       return (
         <div className="mt-2 text-right text-sm">
@@ -228,7 +252,7 @@ function BlockView({
           Boolean,
         );
         return (
-          <div className="-m-5 mb-2 flex flex-col gap-1 bg-bleu-boulga px-5 py-6 text-white">
+          <div className="-m-5 mb-2 flex flex-col gap-1 px-5 py-6 text-white" style={{ backgroundColor: accentHex }}>
             <h2 className="text-2xl font-semibold">{asStr(block.title)}</h2>
             {metaBits.length > 0 ? <p className="text-sm text-white/85">{metaBits.join(" | ")}</p> : null}
           </div>
@@ -236,7 +260,9 @@ function BlockView({
       }
       return (
         <div className="flex flex-col items-center gap-1 py-8 text-center">
-          <h2 className="text-2xl font-semibold text-marine">{asStr(block.title)}</h2>
+          <h2 className="text-2xl font-semibold" style={{ color: darkHex }}>
+            {asStr(block.title)}
+          </h2>
           {block.author ? <p>{asStr(block.author)}</p> : null}
           {block.institution ? <p className="text-sm text-muted-foreground">{asStr(block.institution)}</p> : null}
           {block.supervisor ? (
@@ -328,20 +354,32 @@ export function DocumentRenderer({
   className?: string;
 }) {
   const style = getTemplateStyle(template);
+  // "contact" n'existe que dans le vocabulaire de blocs du CV (voir backend
+  // DOCUMENT_SCHEMAS) — signal fiable pour choisir la mise en forme des titres
+  // (majuscules, voir BlockView) sans avoir a faire remonter le doc_type ici.
+  const isCv = blocks.some((b) => b.type === "contact");
 
   if (style.cvSidebar) {
     const sidebarBlocks = blocks.filter((b) => CV_SIDEBAR_BLOCK_TYPES.has(b.type));
     const mainBlocks = blocks.filter((b) => !CV_SIDEBAR_BLOCK_TYPES.has(b.type));
     return (
       <div className={cn("flex overflow-hidden rounded-[12px] border", className)} style={{ fontFamily: style.fontFamily }}>
-        <div className="flex w-[38%] shrink-0 flex-col gap-1.5 bg-marine p-4">
+        <div className="flex w-[38%] shrink-0 flex-col gap-1.5 p-4" style={{ backgroundColor: style.darkHex }}>
           {sidebarBlocks.map((block, i) => (
             <SidebarBlockView key={i} block={block} />
           ))}
         </div>
         <div className="flex flex-1 flex-col gap-1.5 bg-card p-5">
           {mainBlocks.map((block, i) => (
-            <BlockView key={i} block={block} coverStyle={style.coverStyle} letterBanner={style.letterBanner} />
+            <BlockView
+              key={i}
+              block={block}
+              coverStyle={style.coverStyle}
+              letterBanner={style.letterBanner}
+              accentHex={style.accentHex}
+              darkHex={style.darkHex}
+              isCv={isCv}
+            />
           ))}
         </div>
       </div>
@@ -354,7 +392,15 @@ export function DocumentRenderer({
       style={{ fontFamily: style.fontFamily }}
     >
       {blocks.map((block, i) => (
-        <BlockView key={i} block={block} coverStyle={style.coverStyle} letterBanner={style.letterBanner} />
+        <BlockView
+          key={i}
+          block={block}
+          coverStyle={style.coverStyle}
+          letterBanner={style.letterBanner}
+          accentHex={style.accentHex}
+          darkHex={style.darkHex}
+          isCv={isCv}
+        />
       ))}
     </div>
   );
