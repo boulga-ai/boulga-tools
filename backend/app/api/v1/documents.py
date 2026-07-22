@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.document_engine.document import validate_document
+from app.core.document_engine.palette import validate_accent_color
 from app.core.document_engine.pdf import PdfConversionError, docx_to_pdf
 from app.core.document_engine.renderer import RendererError, render
 from app.core.documents import (
@@ -112,10 +113,12 @@ async def render_document(
     doc_type = document["tool"]
     engine_document = validate_document(doc_type, document.get("content_json") or {})
 
+    accent_override = validate_accent_color(body.accent_color)
+
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         try:
-            docx_path = render(engine_document, body.template, user["tier"], tmp_path)
+            docx_path = render(engine_document, body.template, user["tier"], tmp_path, accent_override)
         except RendererError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 

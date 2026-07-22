@@ -14,3 +14,8 @@ class RenderRequest(BaseModel):
     template: str
     format: DocFormat
     title: str | None = None
+    # Couleur d'accent choisie par le user (palette curatee, voir
+    # document_engine/palette.py) — optionnelle, remplace la couleur par defaut du
+    # template pour cv/cover_letter uniquement. Une valeur hors palette est ignoree
+    # silencieusement (voir validate_accent_color), jamais une erreur bloquante.
+    accent_color: str | None = None

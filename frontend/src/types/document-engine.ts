@@ -86,7 +86,16 @@ export type WorkState = {
 
 // Un document genere dans un projet multiResult (cv/cover_letter) — voir
 // PageResultCard. Fait partie de WorkState/ProjectSnapshot, jamais persiste seul.
-export type ResultItem = { id: string; documentId: string | null; title: string; blocks: DocBlock[]; template: string };
+export type ResultItem = {
+  id: string;
+  documentId: string | null;
+  title: string;
+  blocks: DocBlock[];
+  template: string;
+  // Palette curatee (lib/accent-palette.ts) — undefined = couleur par defaut du
+  // template. Hex sans "#", meme convention que RenderRequest.accent_color.
+  accentColor?: string;
+};
 
 // Un projet archive (voir DocumentWorkspace.handleNewDocument/openProject) : instantane
 // complet de tout ce qu'un projet multiResult porte, hors mise en forme UI (titre en

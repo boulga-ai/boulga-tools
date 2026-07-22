@@ -348,12 +348,18 @@ export function DocumentRenderer({
   blocks,
   template,
   className,
+  accentColorOverride,
 }: {
   blocks: DocBlock[];
   template?: string;
   className?: string;
+  // Couleur d'accent choisie par le user (palette curatee, voir lib/accent-palette.ts)
+  // — sans "#", remplace style.accentHex partout, jamais darkHex (voir backend
+  // renderer.render(accent_override), meme regle).
+  accentColorOverride?: string;
 }) {
-  const style = getTemplateStyle(template);
+  const baseStyle = getTemplateStyle(template);
+  const style = accentColorOverride ? { ...baseStyle, accentHex: `#${accentColorOverride}` } : baseStyle;
   // "contact" n'existe que dans le vocabulaire de blocs du CV (voir backend
   // DOCUMENT_SCHEMAS) — signal fiable pour choisir la mise en forme des titres
   // (majuscules, voir BlockView) sans avoir a faire remonter le doc_type ici.

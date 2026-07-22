@@ -715,6 +715,10 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
               title={item.title}
               blocks={item.blocks}
               template={item.template}
+              accentColor={item.accentColor}
+              onAccentColorChange={(hex) =>
+                setResults((prev) => prev.map((r) => (r.id === item.id ? { ...r, accentColor: hex } : r)))
+              }
               onDelete={() => setResults((prev) => prev.filter((r) => r.id !== item.id))}
             />
           </div>

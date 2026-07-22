@@ -6,7 +6,7 @@ qui relisaient chacun les champs d'un schema Content fige.
 
 AUCUNE regex, AUCUN parsing texte : uniquement les champs types des blocs Pydantic."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
 
@@ -752,7 +752,13 @@ def _render_linear(doc: DocxDocument, blocks: list[Block], style: TemplateStyle,
         # document non-CV (filtres en amont par validate_document sur le vocabulaire).
 
 
-def render(document: EngineDocument, template_name: str, tier: str, output_dir: Path) -> Path:
+def render(
+    document: EngineDocument,
+    template_name: str,
+    tier: str,
+    output_dir: Path,
+    accent_override: str | None = None,
+) -> Path:
     style = TEMPLATE_STYLES.get(template_name)
     if style is None:
         raise RendererError(f"Template inconnu : {template_name}")
@@ -760,6 +766,11 @@ def render(document: EngineDocument, template_name: str, tier: str, output_dir: 
         raise RendererError(
             f"Le template « {template_name} » ne s'applique pas au type « {document.doc_type} »."
         )
+    # Couleur d'accent choisie par le user (palette curatee, voir palette.py) : ne
+    # remplace jamais dark_hex, garde volontairement le style sombre du template pour
+    # les elements non-accentues (nom du contact, titres profonds...).
+    if accent_override:
+        style = replace(style, accent_hex=accent_override)
 
     richness = _tier_richness(tier)
     doc = new_document(style.font_name)
