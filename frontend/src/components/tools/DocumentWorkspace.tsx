@@ -140,6 +140,13 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   // route. pro_doc/academic laissent ce prop a false (defaut) : leur template reste un
   // habillage pur, jamais rappele au LLM.
   templateConditionsContent?: boolean;
+  // pro_doc/academic : le template reste un habillage pur (jamais de contrat de
+  // contenu, contrairement a templateConditionsContent) mais doit quand meme se
+  // choisir AVANT generation, comme cv/cover_letter — uniquement pour deplacer le
+  // selecteur dans leftPanel plutot que resultPanel. Ne declenche jamais
+  // l'invalidation du document existant (voir l'effet cible sur templateConditionsContent
+  // seul, plus bas) : changer de skin pur ne perime jamais un document deja genere.
+  templateUpfront?: boolean;
   // cv/cover_letter : plusieurs documents generes coexistent dans le meme projet
   // (fil de cartes, comme Reseaux sociaux/Convertisseur) au lieu d'un document
   // unique ecrase a chaque generation. newDocumentLabel affiche un bouton qui vide
@@ -160,6 +167,7 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   onStateChange,
   disableLocalStorage,
   templateConditionsContent = false,
+  templateUpfront = false,
   multiResult = false,
   newDocumentLabel,
 }, ref) {
@@ -672,7 +680,7 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
             Pour ajuster ce document (« Raccourcis le résumé »...), décrivez la modification dans le chat ci-contre.
           </p>
 
-          {!templateConditionsContent && templates.length > 0 && (
+          {!templateConditionsContent && !templateUpfront && templates.length > 0 && (
             <>
               <Label>Modèle</Label>
               <TemplateSelector options={templates} value={template} onChange={setTemplate} />
@@ -841,7 +849,7 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
           </div>
         </div>
       )}
-      {templateConditionsContent && templates.length > 0 && (
+      {(templateConditionsContent || templateUpfront) && templates.length > 0 && (
         <div className="flex flex-col gap-1.5">
           <Label className="text-xs text-muted-foreground">Modèle</Label>
           <TemplateSelector options={templates} value={template} onChange={setTemplate} />

@@ -301,6 +301,7 @@ export default function ProDocWriterPage() {
             docType="pro_doc"
             storageKey="boulga:workspace:pro_doc"
             disableLocalStorage
+            templateUpfront
             cadrageFields={[
               { key: "doc_type", label: "Type de document", options: DOC_TYPES },
               { key: "title", label: "Titre (optionnel)" },

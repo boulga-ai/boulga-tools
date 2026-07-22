@@ -297,6 +297,7 @@ export default function AcademicWriterPage() {
             docType="academic"
             storageKey="boulga:workspace:academic"
             disableLocalStorage
+            templateUpfront
             cadrageFields={[
               { key: "doc_type", label: "Type de document", options: TYPES },
               { key: "domain", label: "Domaine", options: DOMAINS },
