@@ -62,6 +62,10 @@ export type DocEngineContext = {
   adjust_instruction?: string;
   competence?: Competence;
   depth?: DetailDepth;
+  // Pour cv/cover_letter, conditionne aussi le vocabulaire de blocs et la consigne LLM
+  // (voir backend blocks.TEMPLATE_OVERRIDES) — pour pro_doc/academic, ignoré par le
+  // backend (habillage pur, décidé au rendu seulement).
+  template?: string;
 };
 
 export type WorkState = {

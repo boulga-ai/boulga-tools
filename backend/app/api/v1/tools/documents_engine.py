@@ -7,7 +7,7 @@ import json
 import uuid
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
@@ -20,7 +20,8 @@ from app.core.llm.prompts.doc_engine import build_messages, build_segment_messag
 from app.core.llm.router import ModelNotAvailableError, resolve_model
 from app.core.rate_limit import rate_limit_dep
 from app.core.usage import log_usage
-from app.dependencies import get_current_user_with_tier
+from app.dependencies import get_current_user, get_current_user_with_tier
+from app.utils.text_extraction import ExtractionError, extract_text
 
 router = APIRouter(prefix="/documents", tags=["documents_engine"], dependencies=[Depends(rate_limit_dep)])
 
@@ -92,6 +93,19 @@ def _infer_title(doc_type: str, document: Document, cadrage: dict) -> str:
         if block.type == "heading" and block.level == 1:
             return block.text
     return cadrage.get("title") or cadrage.get("target_role") or f"Document {doc_type}"
+
+
+@router.post("/extract-text")
+async def extract_document_text(file: UploadFile, user: dict = Depends(get_current_user)) -> dict:
+    """Extrait le texte brut d'un fichier joint (PDF/DOCX/TXT) pour l'injecter dans le
+    composeur du chat (voir DocumentWorkspace/ChatInput) — aucun appel LLM ici, juste
+    de la lecture de fichier, jamais de quota a verifier."""
+    content = await file.read()
+    try:
+        text = extract_text(file.filename or "fichier.txt", content)
+    except ExtractionError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    return {"text": text}
 
 
 @router.post("/{doc_type}/analyze")

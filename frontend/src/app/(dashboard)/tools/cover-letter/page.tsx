@@ -13,7 +13,16 @@ import type { DocBlock } from "@/types/document-engine";
 
 const LETTER_TEMPLATES = [
   { value: "letter_standard", label: "Standard", description: "Format lettre classique française." },
-  { value: "letter_modern", label: "Moderne", description: "Bande marine, mise en page aérée." },
+  { value: "letter_modern", label: "Moderne", description: "Bande colorée, entreprise moderne/startup." },
+  { value: "letter_concours", label: "Concours / Fonction publique", description: "Structure imposée, ton institutionnel." },
+  { value: "letter_academique", label: "Académique / Recherche", description: "Candidature recherche, doctorat, postdoc." },
+];
+
+// Vocabulaire produit uniquement — jamais un nom de modèle affiché au user. Pas de
+// "depth" ici, comme pour le CV (voir cv-writer/page.tsx).
+const COMPETENCES = [
+  { value: "standard", label: "Standard" },
+  { value: "expert", label: "Expert" },
 ];
 
 const DISMISS_KEY = "boulga:cv-import-banner-dismissed";
@@ -37,7 +46,9 @@ export default function CoverLetterPage() {
   });
   const [cvChoices, setCvChoices] = useState<CVChoice[] | null>(null);
   const workspaceRef = useRef<DocumentWorkspaceHandle>(null);
-  const available = profile ? profile.current_tier !== "introduction" : false;
+  // Introduction (essai gratuit) a acces a l'outil ; seul le telechargement reste
+  // reserve a un abonnement (voir cv-writer/page.tsx pour le detail).
+  const isIntroduction = profile?.current_tier === "introduction";
 
   // Detecte simplement si un CV existe en base (le cas "en memoire" est deja couvert
   // par lastCVBlocks ci-dessus), sans rien injecter — le user choisit ensuite via le
@@ -125,26 +136,19 @@ export default function CoverLetterPage() {
       title="Lettre de motivation"
       description="Décrivez votre motivation, l'IA rédige et vous propose d'affiner."
       badge={
-        !available ? (
+        isIntroduction ? (
           <span className="w-fit rounded-[4px] bg-blue-50 px-2 py-0.5 text-xs font-medium text-bleu-boulga">
-            Dès le palier Goutte
+            Essai gratuit — téléchargement dès le palier Goutte
           </span>
         ) : undefined
       }
     >
-      {!available ? (
-        <div className="flex flex-col items-center gap-3 rounded-[12px] border border-dashed p-12 text-center text-muted-foreground">
-          <p>Cet outil nécessite un abonnement à partir du palier Goutte.</p>
-          <a href="/settings">
-            <Button variant="outline">Voir les paliers</Button>
-          </a>
-        </div>
-      ) : (
-        <DocumentWorkspace
-          ref={workspaceRef}
-          docType="cover_letter"
-          storageKey="boulga:workspace:cover_letter"
-          beforeCadrage={
+      <DocumentWorkspace
+        ref={workspaceRef}
+        docType="cover_letter"
+        storageKey="boulga:workspace:cover_letter"
+        templateConditionsContent
+        beforeCadrage={
             <div className="flex flex-col gap-3">
               {cvAvailable && !bannerDismissed && (
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-[10px] border border-bleu-boulga/30 bg-blue-50 p-3">
@@ -191,13 +195,13 @@ export default function CoverLetterPage() {
             { key: "company_name", label: "Entreprise" },
             { key: "full_name", label: "Nom complet" },
             { key: "email", label: "Email", type: "email" },
+            { key: "competence", label: "Compétence", options: COMPETENCES },
           ]}
           textareaLabel="Pourquoi postulez-vous ?"
-          textareaPlaceholder="Décrivez ce qui vous motive pour ce poste et cette entreprise, ce que vous pensez apporter, et collez le texte de l'offre si vous en avez une."
+          textareaPlaceholder="Décrivez ce qui vous motive pour ce poste et cette entreprise, ce que vous pensez apporter, collez le texte de l'offre, ou joignez un fichier PDF/DOCX."
           templates={LETTER_TEMPLATES}
           initialState={{ cadrage: { full_name: profile?.full_name ?? "", email: user?.email ?? "" } }}
-        />
-      )}
+      />
     </ToolLayout>
   );
 }

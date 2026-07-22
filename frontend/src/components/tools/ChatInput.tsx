@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { ArrowUp, Square, Settings2 } from "lucide-react";
+import { useRef, useState, type ChangeEvent, type KeyboardEvent, type ReactNode } from "react";
+import { ArrowUp, Loader2, Paperclip, Square, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -23,6 +23,11 @@ export function ChatInput({
   // Vrai chat (Chat IA, Social Posts) : le champ se vide apres envoi. Outils formulaire
   // (Email, Discours...) : le texte reste visible, il est reutilise par "Regenerer"/l'affinage.
   clearOnSend = true,
+  // Fourni uniquement par les outils qui savent extraire un fichier joint (voir
+  // DocumentWorkspace) — absent partout ailleurs, aucun changement visuel sinon.
+  onAttachFile,
+  attaching,
+  attachAccept = ".pdf,.docx,.txt",
 }: {
   onSend: (message: string) => void;
   placeholder?: string;
@@ -34,11 +39,21 @@ export function ChatInput({
   onValueChange?: (value: string) => void;
   className?: string;
   clearOnSend?: boolean;
+  onAttachFile?: (file: File) => void;
+  attaching?: boolean;
+  attachAccept?: string;
 }) {
   const [internalValue, setInternalValue] = useState("");
   const value = controlledValue ?? internalValue;
   const setValue = onValueChange ?? setInternalValue;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // permet de resélectionner le même fichier ensuite
+    if (file) onAttachFile?.(file);
+  }
 
   function submit() {
     const trimmed = value.trim();
@@ -76,28 +91,50 @@ export function ChatInput({
       />
 
       <div className="flex items-center justify-between">
-        {settingsSlot ? (
-          <Popover>
-            <PopoverTrigger
-              render={
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  disabled={disabled}
-                  aria-label="Options avancées"
-                />
-              }
-            >
-              <Settings2 className="size-4" />
-            </PopoverTrigger>
-            <PopoverContent align="start" side="top">
-              {settingsSlot}
-            </PopoverContent>
-          </Popover>
-        ) : (
-          <span />
-        )}
+        <div className="flex items-center gap-0.5">
+          {onAttachFile && (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={attachAccept}
+                onChange={handleFileChange}
+                className="hidden"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                disabled={disabled || attaching}
+                onClick={() => fileInputRef.current?.click()}
+                aria-label="Joindre un fichier"
+                title="Joindre un fichier (PDF, DOCX, TXT)"
+              >
+                {attaching ? <Loader2 className="size-4 animate-spin" /> : <Paperclip className="size-4" />}
+              </Button>
+            </>
+          )}
+          {settingsSlot && (
+            <Popover>
+              <PopoverTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    disabled={disabled}
+                    aria-label="Options avancées"
+                  />
+                }
+              >
+                <Settings2 className="size-4" />
+              </PopoverTrigger>
+              <PopoverContent align="start" side="top">
+                {settingsSlot}
+              </PopoverContent>
+            </Popover>
+          )}
+        </div>
 
         {isStreaming ? (
           <Button

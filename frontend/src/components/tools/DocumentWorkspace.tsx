@@ -2,8 +2,9 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Sparkles, Eye, Square, Wand2, Download, Plus, X, Loader2, Pencil, Send } from "lucide-react";
+import { Eye, Square, Wand2, Download, Plus, X, Loader2, Pencil } from "lucide-react";
 import { AIInteraction } from "@/components/tools/AIInteraction";
+import { ChatInput } from "@/components/tools/ChatInput";
 import { MarkdownContent } from "@/components/tools/MarkdownContent";
 import { DocumentRenderer } from "@/components/tools/DocumentRenderer";
 import { GenerationError } from "@/components/tools/GenerationError";
@@ -24,7 +25,6 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/componen
 import { useBlockStream } from "@/hooks/useBlockStream";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { apiFetch } from "@/lib/api";
-import { cn } from "@/lib/utils";
 import type {
   AnalyzeResponse,
   ChatTurn,
@@ -35,10 +35,6 @@ import type {
   WorkState,
 } from "@/types/document-engine";
 import type { InteractionBlock } from "@/types/interaction";
-
-// Outils qui utilisent le fil de chat + panels redimensionnables plutot que
-// l'ancien formulaire figé — CV/Lettre gardent l'ancien rendu pour l'instant.
-const CHAT_STYLE_DOC_TYPES: DocType[] = ["academic", "pro_doc"];
 
 export type CadrageField = {
   key: string;
@@ -93,6 +89,13 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   // onStateChange) — utilise par l'academique, dont l'etat est deja persiste en base
   // (sessions longues, plusieurs jours) pour eviter tout conflit entre les deux sources.
   disableLocalStorage?: boolean;
+  // cv/cover_letter : le template choisi conditionne ce que le LLM produit (pas
+  // seulement l'habillage) — voir backend blocks.TEMPLATE_OVERRIDES. Change alors le
+  // moment ou le selecteur de template apparait (des le debut, pas seulement apres
+  // generation) et invalide le document existant si le template change en cours de
+  // route. pro_doc/academic laissent ce prop a false (defaut) : leur template reste un
+  // habillage pur, jamais rappele au LLM.
+  templateConditionsContent?: boolean;
 }>(function DocumentWorkspace({
   docType,
   storageKey,
@@ -105,6 +108,7 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   initialState,
   onStateChange,
   disableLocalStorage,
+  templateConditionsContent = false,
 }, ref) {
   const [restored] = useState<Partial<WorkState>>(() =>
     disableLocalStorage ? (initialState ?? {}) : (loadState(storageKey) ?? initialState ?? {}),
@@ -130,6 +134,7 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   const [template, setTemplate] = useState(templates[0]?.value ?? "");
   const [format, setFormat] = useState<"docx" | "pdf">("pdf");
   const [downloading, setDownloading] = useState(false);
+  const [attaching, setAttaching] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   // En dessous de lg, un split horizontal redimensionnable n'a pas de sens
   // (pas assez de largeur) — academic retombe sur l'empilement vertical simple.
@@ -157,6 +162,22 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cadrage]);
+
+  // Meme logique que ci-dessus, pour le template — mais seulement quand il conditionne
+  // le contenu (cv/cover_letter) : pour pro_doc/academic le template reste un habillage
+  // pur, le changer ne doit jamais invalider le document deja genere.
+  const prevTemplateRef = useRef(template);
+  useEffect(() => {
+    const prev = prevTemplateRef.current;
+    prevTemplateRef.current = template;
+    if (!templateConditionsContent || prev === template) return;
+    if (documentId) {
+      setBlocks([]);
+      setDocumentId(null);
+      setDocTitle(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [template]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -189,6 +210,7 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
       request_plan: false,
       competence: (competence as DocEngineContext["competence"]) || undefined,
       depth: (depth as DocEngineContext["depth"]) || undefined,
+      template: template || undefined,
       ...extra,
     };
   }
@@ -290,6 +312,26 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
     );
   }
 
+  // Extrait le texte d'un fichier joint (PDF/DOCX/TXT) et l'ajoute au brouillon en
+  // cours plutot que de l'envoyer directement : le user relit/complete avant d'envoyer,
+  // jamais de generation surprise a partir d'une extraction non verifiee.
+  async function handleAttachFile(file: File) {
+    setAttaching(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await apiFetch("/api/v1/documents/extract-text", { method: "POST", body: formData });
+      if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail ?? "Extraction impossible.");
+      const data = await res.json();
+      setUserText((prev) => (prev.trim() ? `${prev}\n\n${data.text}` : data.text));
+      toast.success("Texte extrait — vérifiez et complétez avant d'envoyer.");
+    } catch (err) {
+      toast.error("Import du fichier impossible", { description: (err as Error).message });
+    } finally {
+      setAttaching(false);
+    }
+  }
+
   async function handleDownload() {
     if (!documentId) return;
     setDownloading(true);
@@ -334,34 +376,6 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
       });
     }
     return result;
-  }
-
-  const dialogueBlocks: InteractionBlock[] = [];
-  if (analysis) {
-    if (analysis.message) {
-      dialogueBlocks.push({ type: "info", id: "message", variant: "info", text: analysis.message });
-    }
-    for (const s of analysis.suggestions) {
-      dialogueBlocks.push({
-        type: "suggestion",
-        id: s.id,
-        label: s.label,
-        value: s.value,
-        status: "pending",
-        onAccept: () => acceptSuggestion(s.id, s.label, s.value, s.target),
-        onReject: () => rejectSuggestion(s.id),
-        onEdit: (v) => acceptSuggestion(s.id, s.label, v, s.target),
-      });
-    }
-    for (const q of analysis.questions) {
-      dialogueBlocks.push({
-        type: "question",
-        id: q.id,
-        question: q.text,
-        optional: q.optional,
-        onAnswer: (a) => answerQuestion(q.id, q.text, a),
-      });
-    }
   }
 
   const planBlock = plan && (
@@ -411,12 +425,7 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   );
 
   const resultPanel = (
-    <div
-      className={cn(
-        "flex flex-col gap-4",
-        !CHAT_STYLE_DOC_TYPES.includes(docType) && "lg:sticky lg:top-6 lg:self-start",
-      )}
-    >
+    <div className="flex flex-col gap-4">
       {editingTitle ? (
         <Input
           autoFocus
@@ -477,7 +486,7 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
             </Button>
           </div>
 
-          {templates.length > 0 && (
+          {!templateConditionsContent && templates.length > 0 && (
             <>
               <Label>Modèle</Label>
               <TemplateSelector options={templates} value={template} onChange={setTemplate} />
@@ -497,241 +506,151 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
     </div>
   );
 
-  if (CHAT_STYLE_DOC_TYPES.includes(docType)) {
-    const leftPanel = (
-      <div className="flex flex-col gap-3">
-        {beforeCadrage}
-        {cadrageFields.length > 0 && (
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {cadrageFields.map((f) => (
-              <div key={f.key} className="flex flex-col gap-1">
-                <Label className="text-xs text-muted-foreground">{f.label}</Label>
-                {f.options ? (
-                  <Select
-                    value={cadrage[f.key] ?? f.options[0]?.value ?? ""}
-                    onValueChange={(v) => v && setCadrage((prev) => ({ ...prev, [f.key]: v }))}
-                  >
-                    <SelectTrigger className="h-8 w-full text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {f.options.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>
-                          {o.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Input
-                    type={f.type ?? "text"}
-                    value={cadrage[f.key] ?? ""}
-                    placeholder={f.placeholder}
-                    onChange={(e) => setCadrage((prev) => ({ ...prev, [f.key]: e.target.value }))}
-                    className="h-8 text-xs"
-                  />
-                )}
+  const leftPanel = (
+    <div className="flex flex-col gap-3">
+      {beforeCadrage}
+      {templateConditionsContent && templates.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-xs text-muted-foreground">Modèle</Label>
+          <TemplateSelector options={templates} value={template} onChange={setTemplate} />
+        </div>
+      )}
+      {cadrageFields.length > 0 && (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {cadrageFields.map((f) => (
+            <div key={f.key} className="flex flex-col gap-1">
+              <Label className="text-xs text-muted-foreground">{f.label}</Label>
+              {f.options ? (
+                <Select
+                  value={cadrage[f.key] ?? f.options[0]?.value ?? ""}
+                  onValueChange={(v) => v && setCadrage((prev) => ({ ...prev, [f.key]: v }))}
+                >
+                  <SelectTrigger className="h-8 w-full text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {f.options.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  type={f.type ?? "text"}
+                  value={cadrage[f.key] ?? ""}
+                  placeholder={f.placeholder}
+                  onChange={(e) => setCadrage((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                  className="h-8 text-xs"
+                />
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Fil de chat — s'empile, rien n'est jamais effacé */}
+      <div className="flex flex-col gap-3 rounded-[12px] border bg-card p-4">
+        {chatTurns.length === 0 && !analyzing && (
+          <p className="text-sm italic text-muted-foreground">
+            Décrivez votre sujet ci-dessous pour commencer — l&apos;IA vous guidera.
+          </p>
+        )}
+        {chatTurns.map((turn) =>
+          turn.role === "user" ? (
+            <div key={turn.id} className="flex justify-end">
+              <div className="max-w-[85%] whitespace-pre-wrap rounded-[12px] rounded-tr-sm bg-bleu-boulga px-3 py-2 text-sm text-white">
+                {turn.content}
               </div>
-            ))}
+            </div>
+          ) : (
+            <div key={turn.id} className="flex flex-col gap-2">
+              {turn.message && (
+                <div className="max-w-[90%] rounded-[12px] rounded-tl-sm bg-muted px-3 py-2 text-sm">
+                  <MarkdownContent text={turn.message} />
+                </div>
+              )}
+              {turnBlocks(turn).length > 0 && (
+                <div className="max-w-[90%]">
+                  <AIInteraction blocks={turnBlocks(turn)} />
+                </div>
+              )}
+            </div>
+          ),
+        )}
+        {analyzing && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-3.5 animate-spin" />
+            L&apos;IA réfléchit...
           </div>
         )}
-
-        {/* Fil de chat — s'empile, rien n'est jamais effacé */}
-        <div className="flex flex-col gap-3 rounded-[12px] border bg-card p-4">
-          {chatTurns.length === 0 && !analyzing && (
-            <p className="text-sm italic text-muted-foreground">
-              Décrivez votre sujet ci-dessous pour commencer — l&apos;IA vous guidera.
-            </p>
-          )}
-          {chatTurns.map((turn) =>
-            turn.role === "user" ? (
-              <div key={turn.id} className="flex justify-end">
-                <div className="max-w-[85%] whitespace-pre-wrap rounded-[12px] rounded-tr-sm bg-bleu-boulga px-3 py-2 text-sm text-white">
-                  {turn.content}
-                </div>
-              </div>
-            ) : (
-              <div key={turn.id} className="flex flex-col gap-2">
-                {turn.message && (
-                  <div className="max-w-[90%] rounded-[12px] rounded-tl-sm bg-muted px-3 py-2 text-sm">
-                    <MarkdownContent text={turn.message} />
-                  </div>
-                )}
-                {turnBlocks(turn).length > 0 && (
-                  <div className="max-w-[90%]">
-                    <AIInteraction blocks={turnBlocks(turn)} />
-                  </div>
-                )}
-              </div>
-            ),
-          )}
-          {analyzing && (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="size-3.5 animate-spin" />
-              L&apos;IA réfléchit...
-            </div>
-          )}
-          <div ref={chatEndRef} />
-        </div>
-        {analyzeError && <GenerationError message={analyzeError} onRetry={() => handleAnalyze(false)} />}
-
-        {planBlock}
-
-        {/* Composeur façon chat + actions persistantes */}
-        <div className="sticky bottom-4 flex flex-col gap-2 rounded-[12px] border bg-card p-3 shadow-sm">
-          <div className="flex flex-wrap items-center gap-2">
-            <Button onClick={() => handleGenerate()} disabled={isStreaming}>
-              {isStreaming ? "Génération en cours..." : "Générer le document"}
-            </Button>
-            {isStreaming && (
-              <Button variant="outline" onClick={stop}>
-                <Square className="size-4" />
-                Arrêter
-              </Button>
-            )}
-            {analysis?.can_propose_plan && !plan && (
-              <button
-                type="button"
-                onClick={() => handleAnalyze(true)}
-                disabled={analyzing}
-                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-bleu-boulga hover:underline"
-              >
-                <Eye className="size-3.5" />
-                Voir le plan
-              </button>
-            )}
-          </div>
-          <div className="flex items-end gap-2">
-            <Textarea
-              value={userText}
-              onChange={(e) => setUserText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  if (userText.trim() && !analyzing) handleAnalyze(false);
-                }
-              }}
-              placeholder={textareaPlaceholder}
-              className="max-h-40 min-h-10 flex-1 resize-none"
-            />
-            <Button
-              size="icon"
-              onClick={() => handleAnalyze(false)}
-              disabled={analyzing || !userText.trim()}
-              title="Envoyer"
-            >
-              {analyzing ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-            </Button>
-          </div>
-        </div>
+        <div ref={chatEndRef} />
       </div>
-    );
+      {analyzeError && <GenerationError message={analyzeError} onRetry={() => handleAnalyze(false)} />}
 
-    // Sous lg, un split horizontal redimensionnable n'a pas de sens (pas assez
-    // de largeur) — empilement vertical simple, comme avant.
-    if (!isDesktop) {
-      return (
-        <div className="flex flex-col gap-6">
-          {leftPanel}
-          {resultPanel}
-        </div>
-      );
-    }
+      {planBlock}
 
+      <div className="flex flex-wrap items-center gap-2">
+        <Button onClick={() => handleGenerate()} disabled={isStreaming}>
+          {isStreaming ? "Génération en cours..." : "Générer le document"}
+        </Button>
+        {isStreaming && (
+          <Button variant="outline" onClick={stop}>
+            <Square className="size-4" />
+            Arrêter
+          </Button>
+        )}
+        {analysis?.can_propose_plan && !plan && (
+          <button
+            type="button"
+            onClick={() => handleAnalyze(true)}
+            disabled={analyzing}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-bleu-boulga hover:underline"
+          >
+            <Eye className="size-3.5" />
+            Voir le plan
+          </button>
+        )}
+      </div>
+
+      {/* Composeur façon chat (ChatInput partagé — meme composant que Chat IA/Email/
+          Discours) : texte libre ou pièce jointe (PDF/DOCX/TXT), extraite puis ajoutée
+          au brouillon avant envoi. */}
+      <p className="text-xs text-muted-foreground">{textareaLabel}</p>
+      <ChatInput
+        value={userText}
+        onValueChange={setUserText}
+        onSend={() => handleAnalyze(false)}
+        disabled={analyzing}
+        clearOnSend={false}
+        placeholder={textareaPlaceholder}
+        onAttachFile={handleAttachFile}
+        attaching={attaching}
+      />
+    </div>
+  );
+
+  // Sous lg, un split horizontal redimensionnable n'a pas de sens (pas assez de
+  // largeur) — empilement vertical simple.
+  if (!isDesktop) {
     return (
-      <ResizablePanelGroup orientation="horizontal" className="h-full min-h-0">
-        <ResizablePanel defaultSize={58} minSize={35} maxSize={75} className="overflow-y-auto">
-          <div className="pr-4">{leftPanel}</div>
-        </ResizablePanel>
-        <ResizableHandle withHandle />
-        <ResizablePanel defaultSize={42} minSize={25} maxSize={65} className="overflow-y-auto">
-          <div className="pl-4">{resultPanel}</div>
-        </ResizablePanel>
-      </ResizablePanelGroup>
+      <div className="flex flex-col gap-6">
+        {leftPanel}
+        {resultPanel}
+      </div>
     );
   }
 
   return (
-    <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-      <div className="flex flex-col gap-5">
-        {beforeCadrage}
-        {cadrageFields.length > 0 && (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {cadrageFields.map((f) => (
-              <div key={f.key} className="flex flex-col gap-1.5">
-                <Label>{f.label}</Label>
-                {f.options ? (
-                  <Select
-                    value={cadrage[f.key] ?? f.options[0]?.value ?? ""}
-                    onValueChange={(v) => v && setCadrage((prev) => ({ ...prev, [f.key]: v }))}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {f.options.map((o) => (
-                        <SelectItem key={o.value} value={o.value}>
-                          {o.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Input
-                    type={f.type ?? "text"}
-                    value={cadrage[f.key] ?? ""}
-                    placeholder={f.placeholder}
-                    onChange={(e) => setCadrage((prev) => ({ ...prev, [f.key]: e.target.value }))}
-                  />
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="flex flex-col gap-1.5">
-          <Label>{textareaLabel}</Label>
-          <Textarea
-            value={userText}
-            onChange={(e) => setUserText(e.target.value)}
-            placeholder={textareaPlaceholder}
-            className="min-h-40"
-          />
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" onClick={() => handleAnalyze(false)} disabled={analyzing}>
-            {analyzing ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-            {analyzing ? "Analyse en cours..." : "Analyser mes informations"}
-          </Button>
-          <Button onClick={() => handleGenerate()} disabled={isStreaming}>
-            {isStreaming ? "Génération en cours..." : "Générer le document"}
-          </Button>
-          {isStreaming && (
-            <Button variant="outline" onClick={stop}>
-              <Square className="size-4" />
-              Arrêter
-            </Button>
-          )}
-          {analysis?.can_propose_plan && !plan && (
-            <button
-              type="button"
-              onClick={() => handleAnalyze(true)}
-              disabled={analyzing}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-bleu-boulga hover:underline"
-            >
-              <Eye className="size-3.5" />
-              Voir le plan
-            </button>
-          )}
-        </div>
-        {analyzeError && <GenerationError message={analyzeError} onRetry={() => handleAnalyze(false)} />}
-
-        <AIInteraction blocks={dialogueBlocks} loading={analyzing} loadingLabel="L'IA réfléchit..." />
-
-        {planBlock}
-      </div>
-      {resultPanel}
-    </div>
+    <ResizablePanelGroup orientation="horizontal" className="h-full min-h-0">
+      <ResizablePanel defaultSize={58} minSize={35} maxSize={75} className="overflow-y-auto">
+        <div className="pr-4">{leftPanel}</div>
+      </ResizablePanel>
+      <ResizableHandle withHandle />
+      <ResizablePanel defaultSize={42} minSize={25} maxSize={65} className="overflow-y-auto">
+        <div className="pl-4">{resultPanel}</div>
+      </ResizablePanel>
+    </ResizablePanelGroup>
   );
 });

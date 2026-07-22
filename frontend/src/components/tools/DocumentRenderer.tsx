@@ -98,11 +98,19 @@ function BlockView({
       return <div className="my-3 border-t border-dashed" />;
     case "contact": {
       const bits = [asStr(block.email), asStr(block.phone), asStr(block.address), asStr(block.linkedin)].filter(Boolean);
+      // Etat civil (cv_concours) : ignoré silencieusement si absent, comme au rendu final.
+      const civilBits = [
+        block.birth_date || block.birth_place
+          ? `Né(e) le ${asStr(block.birth_date)}${block.birth_place ? ` à ${asStr(block.birth_place)}` : ""}`
+          : "",
+        block.nationality ? `Nationalité : ${asStr(block.nationality)}` : "",
+      ].filter(Boolean);
       return (
         <div>
           <h2 className="text-xl font-semibold text-marine">{asStr(block.full_name) || "—"}</h2>
           {block.title ? <p className="text-bleu-boulga">{asStr(block.title)}</p> : null}
           <p className="text-xs text-muted-foreground">{bits.join(" · ")}</p>
+          {civilBits.length > 0 && <p className="text-xs text-muted-foreground">{civilBits.join(" · ")}</p>}
         </div>
       );
     }

@@ -25,9 +25,13 @@ const TIMES = '"Times New Roman", Times, serif';
 
 export const TEMPLATE_STYLES: Record<string, TemplateStyleInfo> = {
   cv_modern: { cvSidebar: true, letterBanner: false, coverStyle: null, fontFamily: ARIAL },
-  cv_classic: { cvSidebar: false, letterBanner: false, coverStyle: null, fontFamily: TIMES },
+  cv_classic: { cvSidebar: false, letterBanner: false, coverStyle: null, fontFamily: ARIAL },
+  cv_academique: { cvSidebar: false, letterBanner: false, coverStyle: null, fontFamily: TIMES },
+  cv_concours: { cvSidebar: false, letterBanner: false, coverStyle: null, fontFamily: TIMES },
   letter_standard: { cvSidebar: false, letterBanner: false, coverStyle: null, fontFamily: TIMES },
   letter_modern: { cvSidebar: false, letterBanner: true, coverStyle: null, fontFamily: ARIAL },
+  letter_concours: { cvSidebar: false, letterBanner: false, coverStyle: null, fontFamily: TIMES },
+  letter_academique: { cvSidebar: false, letterBanner: false, coverStyle: null, fontFamily: TIMES },
   pro_corporate: { cvSidebar: false, letterBanner: false, coverStyle: "banner", fontFamily: ARIAL },
   pro_minimal: { cvSidebar: false, letterBanner: false, coverStyle: "minimal", fontFamily: ARIAL },
   academic_formal: { cvSidebar: false, letterBanner: false, coverStyle: "formal", fontFamily: TIMES },
