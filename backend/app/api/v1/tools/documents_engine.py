@@ -209,6 +209,14 @@ async def generate_document(
                 update_document_content(document_id, user["user_id"], title, document.model_dump(mode="json"))
             return document, title
 
+        # Emis avant meme le premier appel LLM : si la connexion du client casse en
+        # cours de route (reseau, redeploiement...) sans qu'aucun autre evenement
+        # n'arrive jamais, le frontend connait deja cet identifiant et peut recuperer
+        # le document par un simple GET /documents/{id} plutot que tout reperdre — la
+        # generation continue cote serveur independamment de la connexion SSE (voir
+        # _persist, appele apres chaque segment).
+        yield {"event": "started", "data": json.dumps({"document_id": document_id})}
+
         try:
             if segmented:
                 summaries: list[str] = []

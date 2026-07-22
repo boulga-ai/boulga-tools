@@ -215,9 +215,13 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   const [analysis, setAnalysis] = useState<AnalyzeResponse | null>(null);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
 
-  const { blocks, isStreaming, error, isQuotaError, progress, start, stop } = useBlockStream();
+  // documentId renomme en streamDocumentId ici : distinct du champ documentId de
+  // chaque ResultItem (le resultat fini), celui-ci suit la generation EN COURS des
+  // le tout debut du flux (voir handleRecover).
+  const { blocks, isStreaming, error, isQuotaError, progress, documentId: streamDocumentId, start, stop } = useBlockStream();
   const [template, setTemplate] = useState(templates[0]?.value ?? "");
   const [attaching, setAttaching] = useState(false);
+  const [recovering, setRecovering] = useState(false);
   const [results, setResults] = useState<ResultItem[]>(restored.results ?? []);
   const hasGenerated = results.length > 0;
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
@@ -372,31 +376,33 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
     );
   }
 
+  // Partage entre succes complet (done), generation longue interrompue en cours de
+  // route (partial) et document recupere apres une coupure de connexion
+  // (handleRecover) : dans les trois cas un document existe et merite sa carte —
+  // seuls le message affiche et l'origine different. isFirstResult est calcule par
+  // l'appelant (avant tout ajout), jamais recalcule ici.
+  function applyResult(documentId: string | null, title: string, blocks: DocBlock[], genTemplate: string, isFirstResult: boolean) {
+    setResults((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), documentId, title, blocks, template: genTemplate },
+    ]);
+    // Nomme le projet a partir du contexte (poste vise) ou, a defaut, du titre
+    // genere — mais seulement pour son tout premier document et seulement si le
+    // user n'a pas deja renomme le projet (le nom par defaut reste "Projet N").
+    if (isFirstResult && DEFAULT_PROJECT_NAME_RE.test(projectName)) {
+      const autoName = cadrage.target_role?.trim() || title;
+      if (autoName) setProjectName(autoName);
+    }
+  }
+
   async function handleGenerate(instruction?: string) {
     const genTemplate = template;
     const isFirstResult = results.length === 0;
 
-    // Partage entre succes complet (done) et generation longue interrompue en
-    // cours de route (partial, voir PartialGenerateEvent) : dans les deux cas un
-    // document existe et merite sa carte — seul le message affiche differe.
-    function applyResult(documentId: string | null, title: string, blocks: DocBlock[]) {
-      setResults((prev) => [
-        ...prev,
-        { id: crypto.randomUUID(), documentId, title, blocks, template: genTemplate },
-      ]);
-      // Nomme le projet a partir du contexte (poste vise) ou, a defaut, du titre
-      // genere — mais seulement pour son tout premier document et seulement si le
-      // user n'a pas deja renomme le projet (le nom par defaut reste "Projet N").
-      if (isFirstResult && DEFAULT_PROJECT_NAME_RE.test(projectName)) {
-        const autoName = cadrage.target_role?.trim() || title;
-        if (autoName) setProjectName(autoName);
-      }
-    }
-
     await start(
       `/api/v1/documents/${docType}/generate`,
       { context: buildContext({ adjust_instruction: instruction }) },
-      (done) => applyResult(done.document_id, done.title, done.blocks),
+      (done) => applyResult(done.document_id, done.title, done.blocks, genTemplate, isFirstResult),
       (partial) => {
         const segmentInfo =
           partial.completed_segments != null && partial.total_segments != null
@@ -405,9 +411,36 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
         toast.warning("Génération interrompue", {
           description: `Le document a été enregistré tel quel${segmentInfo} — vous pouvez le télécharger ou relancer une génération.`,
         });
-        applyResult(partial.document_id, partial.title, partial.blocks);
+        applyResult(partial.document_id, partial.title, partial.blocks, genTemplate, isFirstResult);
       },
     );
+  }
+
+  // Filet de securite quand la connexion casse pendant une generation longue (3-4
+  // min, reseau ou redeploiement) sans qu'aucun evenement done/partial n'arrive
+  // jamais : le serveur continue pourtant de son cote (voir documents_engine.py
+  // _persist), et streamDocumentId (connu des le debut du flux, voir useBlockStream)
+  // permet de retrouver ce qui a deja ete sauvegarde plutot que de tout reperdre.
+  async function handleRecover() {
+    if (!streamDocumentId) return;
+    setRecovering(true);
+    try {
+      const res = await apiFetch(`/api/v1/documents/${streamDocumentId}`);
+      if (!res.ok) throw new Error("Document introuvable — la génération n'a peut-être pas encore assez avancé.");
+      const data = await res.json();
+      const recoveredBlocks: DocBlock[] = data.content_json?.blocks ?? [];
+      if (recoveredBlocks.length === 0) {
+        throw new Error("Rien n'a encore été généré pour ce document — réessayez dans quelques instants.");
+      }
+      applyResult(streamDocumentId, data.title || "Document récupéré", recoveredBlocks, template, results.length === 0);
+      toast.warning("Document récupéré après une coupure de connexion", {
+        description: "Vérifiez qu'il est complet avant de le télécharger — la génération a peut-être été interrompue avant la fin.",
+      });
+    } catch (err) {
+      toast.error("Récupération impossible", { description: (err as Error).message });
+    } finally {
+      setRecovering(false);
+    }
   }
 
   function snapshotProject(): ProjectSnapshot {
@@ -656,7 +689,15 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
       </div>
       <div ref={resultsEndRef} />
 
-      {error && <GenerationError message={error} isQuotaError={isQuotaError} onRetry={() => handleGenerate()} />}
+      {error && (
+        <GenerationError
+          message={error}
+          isQuotaError={isQuotaError}
+          onRetry={() => handleGenerate()}
+          onRecover={streamDocumentId ? handleRecover : undefined}
+          recovering={recovering}
+        />
+      )}
       {hasGenerated && connections}
     </div>
   );

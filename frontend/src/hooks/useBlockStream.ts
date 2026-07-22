@@ -18,6 +18,13 @@ export function useBlockStream() {
   const [error, setError] = useState<string | null>(null);
   const [isQuotaError, setIsQuotaError] = useState(false);
   const [progress, setProgress] = useState<StreamProgress | null>(null);
+  // Connu des le tout debut du flux (evenement "started"), bien avant done/partial —
+  // une generation longue (3-4 min) peut voir sa connexion coupee (reseau,
+  // redeploiement) sans qu'aucun autre evenement n'arrive jamais ; le serveur
+  // continue pourtant de son cote (voir documents_engine.py _persist). Cet id permet
+  // au frontend de recuperer le document par un simple GET plutot que de tout
+  // reperdre et forcer une regeneration couteuse.
+  const [documentId, setDocumentId] = useState<string | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
 
   const start = useCallback(async (
@@ -34,6 +41,7 @@ export function useBlockStream() {
     setError(null);
     setIsQuotaError(false);
     setProgress(null);
+    setDocumentId(null);
     setIsStreaming(true);
     const controller = new AbortController();
     controllerRef.current = controller;
@@ -87,7 +95,9 @@ export function useBlockStream() {
             continue;
           }
 
-          if (eventType === "block") {
+          if (eventType === "started") {
+            setDocumentId((parsed as { document_id: string | null }).document_id);
+          } else if (eventType === "block") {
             setBlocks((prev) => [...prev, parsed as DocBlock]);
           } else if (eventType === "segment_start" || eventType === "segment_done") {
             const p = parsed as unknown as StreamProgress;
@@ -116,5 +126,5 @@ export function useBlockStream() {
     controllerRef.current?.abort();
   }, []);
 
-  return { blocks, isStreaming, error, isQuotaError, progress, start, stop, setBlocks };
+  return { blocks, isStreaming, error, isQuotaError, progress, documentId, start, stop, setBlocks };
 }
