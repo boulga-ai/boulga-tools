@@ -8,6 +8,7 @@ import { ChatInput } from "@/components/tools/ChatInput";
 import { MarkdownContent } from "@/components/tools/MarkdownContent";
 import { DocumentRenderer } from "@/components/tools/DocumentRenderer";
 import { GenerationError } from "@/components/tools/GenerationError";
+import { PageResultCard } from "@/components/tools/PageResultCard";
 import { TemplateSelector, type TemplateOption } from "@/components/tools/TemplateSelector";
 import { FormatSelector } from "@/components/tools/FormatSelector";
 import { Input } from "@/components/ui/input";
@@ -24,17 +25,23 @@ import {
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { useBlockStream } from "@/hooks/useBlockStream";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { useSessionResults } from "@/hooks/useSessionResults";
 import { apiFetch } from "@/lib/api";
 import type {
   AnalyzeResponse,
   ChatTurn,
   ConversationTurn,
+  DocBlock,
   DocEngineContext,
   DocType,
   PlanItem,
   WorkState,
 } from "@/types/document-engine";
 import type { InteractionBlock } from "@/types/interaction";
+
+// cv/cover_letter : chaque generation/ajustement s'ajoute a un fil de resultats
+// (multiResult) plutot que d'ecraser un document unique — voir PageResultCard.
+type ResultItem = { id: string; documentId: string | null; title: string; blocks: DocBlock[]; template: string };
 
 export type CadrageField = {
   key: string;
@@ -96,6 +103,13 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   // route. pro_doc/academic laissent ce prop a false (defaut) : leur template reste un
   // habillage pur, jamais rappele au LLM.
   templateConditionsContent?: boolean;
+  // cv/cover_letter : plusieurs documents generes coexistent dans le meme projet
+  // (fil de cartes, comme Reseaux sociaux/Convertisseur) au lieu d'un document
+  // unique ecrase a chaque generation. newDocumentLabel affiche un bouton qui vide
+  // le contexte de travail (cadrage/historique/infos validees) pour changer de
+  // sujet SANS perdre les documents deja generes — eux persistent independamment.
+  multiResult?: boolean;
+  newDocumentLabel?: string;
 }>(function DocumentWorkspace({
   docType,
   storageKey,
@@ -109,6 +123,8 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   onStateChange,
   disableLocalStorage,
   templateConditionsContent = false,
+  multiResult = false,
+  newDocumentLabel,
 }, ref) {
   const [restored] = useState<Partial<WorkState>>(() =>
     disableLocalStorage ? (initialState ?? {}) : (loadState(storageKey) ?? initialState ?? {}),
@@ -134,7 +150,10 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   const [format, setFormat] = useState<"docx" | "pdf">("pdf");
   const [downloading, setDownloading] = useState(false);
   const [attaching, setAttaching] = useState(false);
+  const [results, setResults] = useSessionResults<ResultItem>(`${storageKey}:results`);
+  const hasGenerated = multiResult ? results.length > 0 : !!documentId;
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const resultsEndRef = useRef<HTMLDivElement>(null);
   // En dessous de lg, un split horizontal redimensionnable n'a pas de sens
   // (pas assez de largeur) — academic retombe sur l'empilement vertical simple.
   const isDesktop = useMediaQuery("(min-width: 1024px)");
@@ -182,17 +201,37 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [chatTurns, analyzing]);
 
+  useEffect(() => {
+    if (multiResult) resultsEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [multiResult, results, isStreaming]);
+
   useImperativeHandle(ref, () => ({
     mergeCadrage: (partial) => setCadrage((prev) => ({ ...prev, ...partial })),
     appendText: (text) => setUserText((prev) => (prev.trim() ? `${prev}\n\n${text}` : text)),
   }));
 
   useEffect(() => {
-    const state: WorkState = { cadrage, history, chatTurns, validatedInfo, plan, blocks, documentId, title: docTitle };
+    // En mode multiResult, blocks/documentId singuliers restent toujours vides (voir
+    // handleGenerate) — c'est le DERNIER resultat du fil qui fait foi pour les
+    // consommateurs externes de onStateChange (ex: "Importer depuis mon CV").
+    const latest = multiResult ? results[results.length - 1] : undefined;
+    const effectiveBlocks = multiResult ? (latest?.blocks ?? []) : blocks;
+    const effectiveDocId = multiResult ? (latest?.documentId ?? null) : documentId;
+    const effectiveTitle = multiResult ? (latest?.title ?? null) : docTitle;
+    const state: WorkState = {
+      cadrage,
+      history,
+      chatTurns,
+      validatedInfo,
+      plan,
+      blocks: effectiveBlocks,
+      documentId: effectiveDocId,
+      title: effectiveTitle,
+    };
     if (!disableLocalStorage) saveState(storageKey, state);
     onStateChange?.(state);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cadrage, history, chatTurns, validatedInfo, plan, blocks, documentId, docTitle]);
+  }, [cadrage, history, chatTurns, validatedInfo, plan, blocks, documentId, docTitle, results, multiResult]);
 
   function buildContext(extra?: Partial<DocEngineContext>): DocEngineContext {
     // "competence" et "depth" vivent dans le cadrage cote UI (memes selecteurs
@@ -299,15 +338,38 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   }
 
   async function handleGenerate(instruction?: string) {
-    setDocumentId(null);
+    const genTemplate = template;
+    if (!multiResult) setDocumentId(null);
     await start(
       `/api/v1/documents/${docType}/generate`,
       { context: buildContext({ adjust_instruction: instruction }) },
       (done) => {
-        setDocumentId(done.document_id);
-        setDocTitle(done.title);
+        if (multiResult) {
+          setResults((prev) => [
+            ...prev,
+            { id: crypto.randomUUID(), documentId: done.document_id, title: done.title, blocks: done.blocks, template: genTemplate },
+          ]);
+        } else {
+          setDocumentId(done.document_id);
+          setDocTitle(done.title);
+        }
       },
     );
+  }
+
+  // Change de sujet sans perdre les documents deja generes (qui vivent dans "results",
+  // persiste independamment) — repart du cadrage initial (ex: nom/email pre-remplis
+  // depuis le profil), pas d'un etat totalement vide.
+  function handleNewDocument() {
+    setCadrage(initialState?.cadrage ?? {});
+    setHistory([]);
+    setChatTurns([]);
+    setValidatedInfo({});
+    setPlan(null);
+    setAnalysis(null);
+    setAnalyzeError(null);
+    setUserText("");
+    setTemplate(templates[0]?.value ?? "");
   }
 
   // Extrait le texte d'un fichier joint (PDF/DOCX/TXT) et l'ajoute au brouillon en
@@ -491,9 +553,72 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
     </div>
   );
 
+  // cv/cover_letter : fil de cartes (une par generation/ajustement), jamais ecrasees
+  // — chaque carte est une miniature format page (voir PageResultCard), le document
+  // complet ne se consulte qu'en agrandi.
+  const resultFeed = (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <h3>
+          {results.length > 0 ? `${results.length} document${results.length > 1 ? "s" : ""} généré${results.length > 1 ? "s" : ""}` : "Résultat"}
+        </h3>
+        {results.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setResults([])}
+            className="text-xs font-medium text-muted-foreground hover:text-destructive"
+          >
+            Tout effacer
+          </button>
+        )}
+      </div>
+
+      {results.length === 0 && !isStreaming && (
+        <div className="flex min-h-40 items-center justify-center rounded-[12px] border border-dashed p-8 text-center text-sm text-muted-foreground">
+          Vos documents générés apparaîtront ici.
+        </div>
+      )}
+
+      {results.map((item) => (
+        <PageResultCard
+          key={item.id}
+          documentId={item.documentId}
+          title={item.title}
+          blocks={item.blocks}
+          template={item.template}
+          onDelete={() => setResults((prev) => prev.filter((r) => r.id !== item.id))}
+        />
+      ))}
+
+      {isStreaming && (
+        <div className="flex w-full max-w-[380px] flex-col gap-1.5">
+          <div className="relative aspect-[210/297] w-full overflow-hidden rounded-[10px] border bg-white p-4 shadow-sm">
+            <DocumentRenderer blocks={blocks} template={template} />
+          </div>
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Loader2 className="size-3 animate-spin" />
+            Génération en cours...
+          </p>
+        </div>
+      )}
+      <div ref={resultsEndRef} />
+
+      {error && <GenerationError message={error} isQuotaError={isQuotaError} onRetry={() => handleGenerate()} />}
+      {hasGenerated && connections}
+    </div>
+  );
+
   const leftPanel = (
     <div className="flex flex-col gap-3">
       {beforeCadrage}
+      {multiResult && newDocumentLabel && (
+        <div className="flex justify-end">
+          <Button variant="outline" size="sm" onClick={handleNewDocument}>
+            <Plus className="size-3.5" />
+            {newDocumentLabel}
+          </Button>
+        </div>
+      )}
       {templateConditionsContent && templates.length > 0 && (
         <div className="flex flex-col gap-1.5">
           <Label className="text-xs text-muted-foreground">Modèle</Label>
@@ -605,13 +730,13 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
           ici regenere directement avec ce texte comme instruction d'ajustement —
           plus besoin d'un champ separe pour "corriger" le document. */}
       <p className="text-xs text-muted-foreground">
-        {documentId ? "Décrivez la modification à apporter au document généré." : textareaLabel}
+        {hasGenerated ? "Décrivez la modification à apporter au document généré." : textareaLabel}
       </p>
       <ChatInput
         value={userText}
         onValueChange={setUserText}
         onSend={() => {
-          if (documentId) {
+          if (hasGenerated) {
             const instruction = userText.trim();
             setUserText("");
             handleGenerate(instruction);
@@ -621,12 +746,14 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
         }}
         disabled={analyzing || isStreaming}
         clearOnSend={false}
-        placeholder={documentId ? "Ex : « Raccourcis le résumé », « Ajoute un stage »..." : textareaPlaceholder}
+        placeholder={hasGenerated ? "Ex : « Raccourcis le résumé », « Ajoute un stage »..." : textareaPlaceholder}
         onAttachFile={handleAttachFile}
         attaching={attaching}
       />
     </div>
   );
+
+  const rightPanel = multiResult ? resultFeed : resultPanel;
 
   // Sous lg, un split horizontal redimensionnable n'a pas de sens (pas assez de
   // largeur) — empilement vertical simple.
@@ -634,7 +761,7 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
     return (
       <div className="flex flex-col gap-6">
         {leftPanel}
-        {resultPanel}
+        {rightPanel}
       </div>
     );
   }
@@ -646,7 +773,7 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
       </ResizablePanel>
       <ResizableHandle withHandle />
       <ResizablePanel defaultSize={42} minSize={25} maxSize={65} className="overflow-y-auto">
-        <div className="pl-4">{resultPanel}</div>
+        <div className="pl-4">{rightPanel}</div>
       </ResizablePanel>
     </ResizablePanelGroup>
   );

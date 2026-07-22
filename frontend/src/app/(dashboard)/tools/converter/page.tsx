@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -29,6 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useSessionResults } from "@/hooks/useSessionResults";
 import { apiFetch } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -54,31 +55,6 @@ function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} o`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} Ko`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
-}
-
-// Fil de resultats cumules persiste en sessionStorage, une cle par onglet — restaure au
-// montage, sauvegarde a chaque changement. Les liens expirent avec le lien signe (24h),
-// pas besoin de nettoyage particulier.
-function useSessionResults<T>(key: string): [T[], Dispatch<SetStateAction<T[]>>] {
-  const [state, setState] = useState<T[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const raw = sessionStorage.getItem(key);
-      return raw ? JSON.parse(raw) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  useEffect(() => {
-    try {
-      sessionStorage.setItem(key, JSON.stringify(state));
-    } catch {
-      // quota depasse ou sessionStorage indisponible : pas bloquant
-    }
-  }, [key, state]);
-
-  return [state, setState];
 }
 
 function outputFormatsFor(filename: string): string[] {

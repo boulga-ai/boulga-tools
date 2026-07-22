@@ -3,12 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Import, Sparkles } from "lucide-react";
-import { ToolLayout } from "@/components/tools/ToolLayout";
 import { DocumentWorkspace, type DocumentWorkspaceHandle } from "@/components/tools/DocumentWorkspace";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
+import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { apiFetch } from "@/lib/api";
 import { useToolStore } from "@/stores/toolStore";
+import { cn } from "@/lib/utils";
 import type { DocBlock } from "@/types/document-engine";
 
 const LETTER_TEMPLATES = [
@@ -49,6 +50,8 @@ export default function CoverLetterPage() {
   // Introduction (essai gratuit) a acces a l'outil ; seul le telechargement reste
   // reserve a un abonnement (voir cv-writer/page.tsx pour le detail).
   const isIntroduction = profile?.current_tier === "introduction";
+  // Ne passe pas par ToolLayout (plafonne a max-w-5xl) : meme raison que cv-writer.
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
 
   // Detecte simplement si un CV existe en base (le cas "en memoire" est deja couvert
   // par lastCVBlocks ci-dessus), sans rien injecter — le user choisit ensuite via le
@@ -132,76 +135,84 @@ export default function CoverLetterPage() {
   }
 
   return (
-    <ToolLayout
-      title="Lettre de motivation"
-      description="Décrivez votre motivation, l'IA rédige et vous propose d'affiner."
-      badge={
-        isIntroduction ? (
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex flex-col gap-1.5 border-b bg-card px-4 py-3 lg:px-6">
+        {isIntroduction && (
           <span className="w-fit rounded-[4px] bg-blue-50 px-2 py-0.5 text-xs font-medium text-bleu-boulga">
             Essai gratuit — téléchargement dès le palier Goutte
           </span>
-        ) : undefined
-      }
-    >
-      <DocumentWorkspace
-        ref={workspaceRef}
-        docType="cover_letter"
-        storageKey="boulga:workspace:cover_letter"
-        templateConditionsContent
-        beforeCadrage={
-            <div className="flex flex-col gap-3">
-              {cvAvailable && !bannerDismissed && (
-                <div className="flex flex-wrap items-center justify-between gap-2 rounded-[10px] border border-bleu-boulga/30 bg-blue-50 p-3">
-                  <div className="flex items-center gap-2 text-sm">
-                    <Sparkles className="size-4 shrink-0 text-bleu-boulga" />
-                    <span>Un CV récent a été trouvé. Utiliser ces informations pour pré-remplir ?</span>
+        )}
+        <h1 className="text-lg font-semibold">Lettre de motivation</h1>
+        <p className="text-sm text-muted-foreground">
+          Décrivez votre motivation, l&apos;IA rédige et vous propose d&apos;affiner.
+        </p>
+      </div>
+
+      <div className={cn("min-h-0 p-4 lg:p-6", isDesktop ? "flex-1 overflow-hidden" : "flex-1 overflow-y-auto")}>
+        <div className={cn("h-full min-h-0 w-full", isDesktop && "h-full")}>
+          <DocumentWorkspace
+            ref={workspaceRef}
+            docType="cover_letter"
+            storageKey="boulga:workspace:cover_letter"
+            templateConditionsContent
+            multiResult
+            newDocumentLabel="Nouvelle lettre"
+            beforeCadrage={
+              <div className="flex flex-col gap-3">
+                {cvAvailable && !bannerDismissed && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-[10px] border border-bleu-boulga/30 bg-blue-50 p-3">
+                    <div className="flex items-center gap-2 text-sm">
+                      <Sparkles className="size-4 shrink-0 text-bleu-boulga" />
+                      <span>Un CV récent a été trouvé. Utiliser ces informations pour pré-remplir ?</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" onClick={importFromCV} disabled={importingCV}>
+                        Utiliser
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={dismissBanner}>
+                        Non merci
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Button size="sm" onClick={importFromCV} disabled={importingCV}>
-                      Utiliser
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={dismissBanner}>
-                      Non merci
-                    </Button>
+                )}
+                <Button variant="outline" onClick={importFromCV} disabled={importingCV} className="w-fit">
+                  <Import className="size-4" />
+                  {importingCV ? "Import en cours..." : "Importer depuis mon CV"}
+                </Button>
+                {cvChoices && (
+                  <div className="flex flex-col gap-1.5 rounded-[10px] border p-3">
+                    <p className="text-xs font-medium uppercase text-muted-foreground">Plusieurs CV trouvés — choisissez</p>
+                    {cvChoices.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => loadCVById(c.id)}
+                        className="flex items-center justify-between rounded-[6px] px-2 py-1.5 text-left text-sm hover:bg-accent"
+                      >
+                        <span className="truncate">{c.title}</span>
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {new Date(c.created_at).toLocaleDateString("fr-FR")}
+                        </span>
+                      </button>
+                    ))}
                   </div>
-                </div>
-              )}
-              <Button variant="outline" onClick={importFromCV} disabled={importingCV} className="w-fit">
-                <Import className="size-4" />
-                {importingCV ? "Import en cours..." : "Importer depuis mon CV"}
-              </Button>
-              {cvChoices && (
-                <div className="flex flex-col gap-1.5 rounded-[10px] border p-3">
-                  <p className="text-xs font-medium uppercase text-muted-foreground">Plusieurs CV trouvés — choisissez</p>
-                  {cvChoices.map((c) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => loadCVById(c.id)}
-                      className="flex items-center justify-between rounded-[6px] px-2 py-1.5 text-left text-sm hover:bg-accent"
-                    >
-                      <span className="truncate">{c.title}</span>
-                      <span className="shrink-0 text-xs text-muted-foreground">
-                        {new Date(c.created_at).toLocaleDateString("fr-FR")}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          }
-          cadrageFields={[
-            { key: "target_role", label: "Poste visé" },
-            { key: "company_name", label: "Entreprise" },
-            { key: "full_name", label: "Nom complet" },
-            { key: "email", label: "Email", type: "email" },
-            { key: "competence", label: "Compétence", options: COMPETENCES },
-          ]}
-          textareaLabel="Pourquoi postulez-vous ?"
-          textareaPlaceholder="Décrivez ce qui vous motive pour ce poste et cette entreprise, ce que vous pensez apporter, collez le texte de l'offre, ou joignez un fichier PDF/DOCX."
-          templates={LETTER_TEMPLATES}
-          initialState={{ cadrage: { full_name: profile?.full_name ?? "", email: user?.email ?? "" } }}
-      />
-    </ToolLayout>
+                )}
+              </div>
+            }
+            cadrageFields={[
+              { key: "target_role", label: "Poste visé" },
+              { key: "company_name", label: "Entreprise" },
+              { key: "full_name", label: "Nom complet" },
+              { key: "email", label: "Email", type: "email" },
+              { key: "competence", label: "Compétence", options: COMPETENCES },
+            ]}
+            textareaLabel="Pourquoi postulez-vous ?"
+            textareaPlaceholder="Décrivez ce qui vous motive pour ce poste et cette entreprise, ce que vous pensez apporter, collez le texte de l'offre, ou joignez un fichier PDF/DOCX."
+            templates={LETTER_TEMPLATES}
+            initialState={{ cadrage: { full_name: profile?.full_name ?? "", email: user?.email ?? "" } }}
+          />
+        </div>
+      </div>
+    </div>
   );
 }

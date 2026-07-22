@@ -292,7 +292,10 @@ export default function ProDocWriterPage() {
           isDesktop ? "flex-1 overflow-hidden" : "flex-1 overflow-y-auto",
         )}
       >
-        <div className={cn("mx-auto w-full max-w-6xl", isDesktop && "h-full min-h-0")}>
+        {/* Pas de max-w ici : un plafond fixe rendrait le redimensionnement des
+            panels de DocumentWorkspace (et le fait de masquer la sidebar) sans
+            effet des que le contenu atteint deja ce plafond — voir cv-writer. */}
+        <div className={cn("h-full w-full", isDesktop && "min-h-0")}>
           <DocumentWorkspace
             key={session?.id ?? "new"}
             docType="pro_doc"
