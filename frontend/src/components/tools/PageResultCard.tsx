@@ -101,10 +101,19 @@ export function PageResultCard({
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="flex max-h-[85vh] w-full max-w-4xl flex-col gap-4 overflow-y-auto sm:max-w-4xl">
-          <DialogTitle>{title}</DialogTitle>
-          <DocumentRenderer blocks={blocks} template={template} />
-          <div className="flex items-center gap-3 border-t pt-4">
+        {/* Le decoupage tete/corps/pied en 3 blocs (plutot qu'un seul conteneur
+            scrollable) garantit que le titre et le bouton telecharger restent
+            toujours visibles, et que seul le corps (le document) defile — sans ca,
+            un document long fait defiler le pied avec, jusqu'a le faire sortir de
+            vue. min-h-0 sur le corps est necessaire : sans lui, un enfant flex ne
+            peut pas se retrecir sous la hauteur de son contenu et le defilement
+            interne ne se declenche jamais (piege classique de flexbox). */}
+        <DialogContent className="flex max-h-[85vh] w-full max-w-4xl flex-col gap-0 p-0 sm:max-w-4xl">
+          <DialogTitle className="shrink-0 px-4 pt-4">{title}</DialogTitle>
+          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            <DocumentRenderer blocks={blocks} template={template} />
+          </div>
+          <div className="flex shrink-0 items-center gap-3 border-t p-4">
             <FormatSelector value={format} onChange={setFormat} />
             <Button onClick={handleDownload} disabled={downloading || !documentId}>
               {downloading ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}

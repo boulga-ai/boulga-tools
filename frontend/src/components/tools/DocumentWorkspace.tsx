@@ -585,7 +585,7 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
           en dessous de ce plafond genereux. */}
       <div className="flex flex-col gap-4">
         {results.map((item) => (
-          <div key={item.id} className="w-full max-w-[800px]">
+          <div key={item.id} className="mx-auto w-full max-w-[800px]">
             <PageResultCard
               documentId={item.documentId}
               title={item.title}
@@ -597,7 +597,7 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
         ))}
 
         {isStreaming && (
-          <div className="flex w-full max-w-[800px] flex-col gap-1.5">
+          <div className="mx-auto flex w-full max-w-[800px] flex-col gap-1.5">
             <div className="relative aspect-[210/297] w-full overflow-hidden rounded-[10px] border bg-white p-4 shadow-sm">
               <DocumentRenderer blocks={blocks} template={template} />
             </div>
@@ -793,12 +793,16 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
         {leftPanelCollapsed ? (
           <div className="h-full overflow-y-auto">{rightPanel}</div>
         ) : (
+          // react-resizable-panels v4 : un nombre nu est interprete en PIXELS, pas en
+          // pourcentage (ex: defaultSize={58} = 58px, pas 58%) — d'ou le "figé" qui
+          // persistait malgre les corrections precedentes : le panel etait borne a
+          // une plage de quelques dizaines de pixels. Chaines de caracteres = pourcentage.
           <ResizablePanelGroup orientation="horizontal" className="h-full min-h-0">
-            <ResizablePanel defaultSize={58} minSize={35} maxSize={75} className="overflow-y-auto">
+            <ResizablePanel defaultSize="58" minSize="35" maxSize="75" className="overflow-y-auto">
               <div className="pr-4">{leftPanel}</div>
             </ResizablePanel>
             <ResizableHandle withHandle />
-            <ResizablePanel defaultSize={42} minSize={25} maxSize={65} className="overflow-y-auto">
+            <ResizablePanel defaultSize="42" minSize="25" maxSize="65" className="overflow-y-auto">
               <div className="pl-4">{rightPanel}</div>
             </ResizablePanel>
           </ResizablePanelGroup>
