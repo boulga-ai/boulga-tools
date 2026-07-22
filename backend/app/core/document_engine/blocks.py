@@ -63,6 +63,12 @@ class ContactBlock(BaseModel):
     phone: str | None = None
     address: str | None = None
     linkedin: str | None = None
+    # Champs optionnels utilises par certains templates seulement (ex: cv_concours) —
+    # ignores silencieusement au rendu si absents, jamais requis par les autres.
+    photo_url: str | None = None
+    birth_date: str | None = None
+    birth_place: str | None = None
+    nationality: str | None = None
 
 
 class SummaryBlock(BaseModel):
@@ -307,3 +313,111 @@ DOCUMENT_SCHEMAS: dict[str, dict] = {
         ),
     },
 }
+
+
+# --- Contrats par template (cv / cover_letter uniquement) ----------------------------
+#
+# Le vocabulaire/consigne ci-dessus (DOCUMENT_SCHEMAS) reste la base commune par
+# doc_type. Pour cv et cover_letter, le TEMPLATE choisi vient en plus conditionner ce
+# que le LLM produit (contexte pro/etudiant/academique/concours) — extra_blocks
+# elargit le vocabulaire autorise, guidance s'ajoute a la consigne de base. pro_doc et
+# academic n'ont volontairement pas d'entree ici : leur template reste un habillage
+# pur (voir renderer.py), jamais une consigne de contenu.
+TEMPLATE_OVERRIDES: dict[str, dict] = {
+    "cv_modern": {
+        "label": "Professionnel",
+        "extra_blocks": [],
+        "guidance": (
+            "Contexte : candidature classique en entreprise privee. Mets l'accent sur "
+            "les resultats chiffres et les verbes d'action, dans l'ordre "
+            "antichronologique."
+        ),
+    },
+    "cv_classic": {
+        "label": "Étudiant / Scolaire",
+        "extra_blocks": [],
+        "guidance": (
+            "Contexte : profil etudiant, stage, alternance, premier emploi — "
+            "experience professionnelle limitee ou absente. Place education AVANT "
+            "experience. Ne laisse jamais le CV paraitre pauvre par manque "
+            "d'experience : valorise la formation, les projets academiques, les "
+            "activites associatives ou benevoles comme des blocs experience a part "
+            "entiere."
+        ),
+    },
+    "cv_academique": {
+        "label": "Académique / Universitaire",
+        "extra_blocks": ["bibliography"],
+        "guidance": (
+            "Contexte : candidature academique (doctorat, poste de recherche ou "
+            "d'enseignement). Place education AVANT experience, en detaillant le "
+            "sujet de these/memoire dans le champ details. Ajoute une section "
+            "'Enseignement' (heading + experience reutilise pour les cours donnes) si "
+            "le user en mentionne. Ajoute une section 'Publications' via un bloc "
+            "bibliography si des publications sont mentionnees — sinon omets-le."
+        ),
+    },
+    "cv_concours": {
+        "label": "Concours / Administratif",
+        "extra_blocks": [],
+        "guidance": (
+            "Contexte : concours administratif ou fonction publique (Afrique de "
+            "l'Ouest francophone). Renseigne les champs birth_date, birth_place, "
+            "nationality du bloc contact des que l'info est disponible — ils sont "
+            "attendus dans ce type de dossier. Ton sobre et institutionnel."
+        ),
+    },
+    "letter_standard": {
+        "label": "Standard",
+        "extra_blocks": [],
+        "guidance": "Contexte : candidature classique en entreprise privee, ton professionnel sobre.",
+    },
+    "letter_modern": {
+        "label": "Moderne",
+        "extra_blocks": [],
+        "guidance": "Contexte : candidature privee, ton plus direct et energique, entreprise moderne/startup.",
+    },
+    "letter_concours": {
+        "label": "Concours / Fonction publique",
+        "extra_blocks": [],
+        "guidance": (
+            "Contexte : concours ou candidature dans la fonction publique. Structure "
+            "stricte en 3 parties (introduction rappelant le concours/poste, "
+            "developpement sur competences et motivation, conclusion sur la "
+            "contribution souhaitee). Utilise la formule d'appel officielle adaptee "
+            "au destinataire (ex. « Madame la Directrice », « Monsieur le Maire ») "
+            "dans recipient_title. Insiste sur le sens du service public et l'interet "
+            "general plutot que sur un interet commercial."
+        ),
+    },
+    "letter_academique": {
+        "label": "Académique / Recherche",
+        "extra_blocks": [],
+        "guidance": (
+            "Contexte : candidature a un poste de recherche, doctorat ou postdoc. "
+            "Centre la motivation sur l'adequation du projet de recherche avec le "
+            "laboratoire ou l'equipe visee plutot que sur une entreprise."
+        ),
+    },
+}
+
+
+def effective_schema(doc_type: str, template: str | None = None) -> dict:
+    """Schema effectif pour un doc_type, eventuellement enrichi par le contrat du
+    template choisi (cv/cover_letter seulement — voir TEMPLATE_OVERRIDES). Un
+    template absent, inconnu, ou appartenant a un doc_type sans contrat (pro_doc,
+    academic) renvoie simplement le schema de base, jamais une erreur."""
+    base = DOCUMENT_SCHEMAS[doc_type]
+    override = TEMPLATE_OVERRIDES.get(template or "")
+    if not override:
+        return base
+
+    extra_blocks = [b for b in override.get("extra_blocks", []) if b not in base["blocks"]]
+    guidance = base["guidance"]
+    if override.get("guidance"):
+        guidance = f"{guidance}\n\n{override['guidance']}"
+    return {
+        "description": base["description"],
+        "blocks": [*base["blocks"], *extra_blocks],
+        "guidance": guidance,
+    }

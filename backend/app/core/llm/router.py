@@ -76,16 +76,21 @@ DEFAULT_ROUTING: dict[str, dict[str, list[str] | None]] = {
         "goutte_source": ["openai/gpt-5.1-mini"],
         "fleuve_ocean": ["anthropic/claude-sonnet-4.6"],
     },
-    # Documents avances — jamais disponibles en Introduction.
+    # CV et lettre de motivation — disponibles des l'Introduction (essai gratuit) pour
+    # laisser un user non-abonne generer et PREVISUALISER un document : le quota
+    # downloads (0 en introduction, voir app/core/quota.py TIER_LIMITS) bloque deja
+    # nativement le telechargement a ce palier, aucune logique supplementaire requise
+    # ici. 2 candidats en fleuve_ocean comme pro_doc_writer/academic_writer : [0]
+    # standard, [1] expert (Opus, cf. resolve_model).
     "cv_writer": {
-        "introduction": None,
+        "introduction": ["x-ai/grok-4.3", "deepseek/deepseek-v4-flash"],
         "goutte_source": ["x-ai/grok-4.3", "google/gemini-3.5-flash"],
-        "fleuve_ocean": ["anthropic/claude-sonnet-4.6"],
+        "fleuve_ocean": ["anthropic/claude-sonnet-4.6", "anthropic/claude-opus-4.6"],
     },
     "cover_letter": {
-        "introduction": None,
+        "introduction": ["x-ai/grok-4.3", "deepseek/deepseek-v4-flash"],
         "goutte_source": ["x-ai/grok-4.3", "google/gemini-3.5-flash"],
-        "fleuve_ocean": ["anthropic/claude-sonnet-4.6"],
+        "fleuve_ocean": ["anthropic/claude-sonnet-4.6", "anthropic/claude-opus-4.6"],
     },
     "planner": {
         "introduction": None,

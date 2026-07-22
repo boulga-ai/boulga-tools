@@ -51,9 +51,13 @@ class DocEngineContext(BaseModel):
     adjust_instruction: str | None = None
     # "competence" reste un vocabulaire produit abstrait — jamais un nom de modele
     # expose au user (voir router.resolve_model). "depth" reutilise l'echelle deja
-    # existante du Generateur de plan (app/models/planner.py PlannerDepth).
+    # existante du Generateur de plan (app/models/planner.py PlannerDepth) ; ignoree
+    # pour cv/cover_letter (voir doc_engine._DOC_TYPES_WITHOUT_DEPTH). "template" ne
+    # sert au rendu que pour pro_doc/academic (skin pur) ; pour cv/cover_letter il
+    # conditionne aussi ce que le LLM produit (voir blocks.TEMPLATE_OVERRIDES).
     competence: Literal["standard", "expert"] = "standard"
     depth: Literal["essentiel", "detaille", "tres_detaille"] = "detaille"
+    template: str | None = None
 
 
 class AnalyzeRequest(BaseModel):
@@ -210,7 +214,9 @@ async def generate_document(
         except Exception:
             pass  # le document a deja ete livre ; ne pas casser le flux sur un souci de log
 
-        document = validate_document(doc_type, {"blocks": raw_blocks, "meta": body.context.cadrage})
+        document = validate_document(
+            doc_type, {"blocks": raw_blocks, "meta": body.context.cadrage}, body.context.template
+        )
         title = _infer_title(doc_type, document, body.context.cadrage)
 
         document_id = str(uuid.uuid4())

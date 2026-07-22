@@ -12,7 +12,7 @@ from typing import Literal
 
 from docx.document import Document as DocxDocument
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.shared import Cm, Pt
+from docx.shared import Cm, Pt, RGBColor
 from docx.table import _Cell
 
 from app.core.document_engine.blocks import Block
@@ -68,16 +68,61 @@ class TemplateStyle:
     reliure_margin: bool = False
     margins_cm: tuple[float, float, float, float] = (2.5, 2.5, 2.5, 2.5)  # gauche, droite, haut, bas
     font_name: str = "Arial"  # jamais Calibri — Arial (moderne) ou Times New Roman (classique/formel)
+    # Couleurs propres au template — defaut = bleu/marine Boulga (templates pro_doc/
+    # academic, inchanges). cv/cover_letter diversifient desormais ces teintes par
+    # contexte (etudiant, academique, concours...) plutot que de partager toujours
+    # les 2 memes couleurs de marque.
+    accent_hex: str = "1565C0"
+    dark_hex: str = "0B1F3A"
 
 
 TEMPLATE_STYLES: dict[str, TemplateStyle] = {
-    "cv_modern": TemplateStyle(doc_type="cv", label="Moderne", cv_sidebar=True, font_name="Arial"),
-    "cv_classic": TemplateStyle(doc_type="cv", label="Classique", cv_sidebar=False, font_name="Times New Roman"),
+    "cv_modern": TemplateStyle(doc_type="cv", label="Professionnel", cv_sidebar=True, font_name="Arial"),
+    "cv_classic": TemplateStyle(
+        doc_type="cv",
+        label="Étudiant / Scolaire",
+        cv_sidebar=False,
+        font_name="Arial",
+        accent_hex="0E7C6B",
+        dark_hex="0B4A3D",
+    ),
+    "cv_academique": TemplateStyle(
+        doc_type="cv",
+        label="Académique / Universitaire",
+        cv_sidebar=False,
+        font_name="Times New Roman",
+        accent_hex="333333",
+        dark_hex="1A1A1A",
+    ),
+    "cv_concours": TemplateStyle(
+        doc_type="cv",
+        label="Concours / Administratif",
+        cv_sidebar=False,
+        font_name="Times New Roman",
+        accent_hex="37474F",
+        dark_hex="263238",
+    ),
     "letter_standard": TemplateStyle(
         doc_type="cover_letter", label="Standard", letter_banner=False, font_name="Times New Roman"
     ),
     "letter_modern": TemplateStyle(
         doc_type="cover_letter", label="Moderne", letter_banner=True, font_name="Arial"
+    ),
+    "letter_concours": TemplateStyle(
+        doc_type="cover_letter",
+        label="Concours / Fonction publique",
+        letter_banner=False,
+        font_name="Times New Roman",
+        accent_hex="37474F",
+        dark_hex="263238",
+    ),
+    "letter_academique": TemplateStyle(
+        doc_type="cover_letter",
+        label="Académique / Recherche",
+        letter_banner=False,
+        font_name="Times New Roman",
+        accent_hex="333333",
+        dark_hex="1A1A1A",
     ),
     "pro_corporate": TemplateStyle(
         doc_type="pro_doc",
@@ -119,9 +164,13 @@ def _render_heading(doc: DocxDocument, block, style: TemplateStyle, richness: Ri
     if not heading.runs:
         return
     run = heading.runs[0]
-    run.font.color.rgb = MARINE if richness == "sobre" or block.level > 1 else BLEU_BOULGA
+    run.font.color.rgb = (
+        RGBColor.from_string(style.dark_hex)
+        if richness == "sobre" or block.level > 1
+        else RGBColor.from_string(style.accent_hex)
+    )
     if richness != "sobre" and block.level == 1:
-        add_bottom_border(heading, "1565C0" if richness == "premium" else "0B1F3A")
+        add_bottom_border(heading, style.accent_hex if richness == "premium" else style.dark_hex)
 
 
 def _render_table(container: Container, block, richness: Richness) -> None:
@@ -283,7 +332,7 @@ def _render_letter_header(doc: DocxDocument, block, style: TemplateStyle) -> Non
         header_table = doc.add_table(rows=1, cols=1)
         remove_table_borders(header_table)
         cell = header_table.rows[0].cells[0]
-        set_cell_background(cell, "0B1F3A")
+        set_cell_background(cell, style.dark_hex)
         set_cell_margins(cell, top_cm=0.4, left_cm=0.8, bottom_cm=0.4, right_cm=0.8)
         cell.paragraphs[0].text = ""
         name_run = cell.paragraphs[0].add_run(block.sender_name)
@@ -330,7 +379,7 @@ def _render_subject(doc: DocxDocument, block, style: TemplateStyle, richness: Ri
     if style.letter_banner or richness != "sobre":
         run = p.add_run(block.text)
         run.font.bold = True
-        run.font.color.rgb = BLEU_BOULGA
+        run.font.color.rgb = RGBColor.from_string(style.accent_hex)
         run.font.size = Pt(12)
     else:
         run = p.add_run(f"Objet : {block.text}")
@@ -341,7 +390,7 @@ def _render_subject(doc: DocxDocument, block, style: TemplateStyle, richness: Ri
         tag_p = doc.add_paragraph()
         tag_run = tag_p.add_run(tagline)
         tag_run.font.size = Pt(7)
-        tag_run.font.color.rgb = BLEU_BOULGA
+        tag_run.font.color.rgb = RGBColor.from_string(style.accent_hex)
         doc.add_paragraph()
 
 
@@ -370,7 +419,10 @@ def _bullet_indent(paragraph) -> None:
     paragraph.paragraph_format.first_line_indent = Cm(-0.45)
 
 
-def _render_contact(container: Container, block, richness: Richness, *, white_text: bool) -> None:
+def _render_contact(container: Container, block, richness: Richness, style: TemplateStyle, *, white_text: bool) -> None:
+    dark = RGBColor.from_string(style.dark_hex)
+    accent = RGBColor.from_string(style.accent_hex)
+
     name_p = container.add_paragraph()
     name_run = name_p.add_run(block.full_name or "—")
     name_run.font.size = Pt(18 if white_text else 20)
@@ -378,7 +430,7 @@ def _render_contact(container: Container, block, richness: Richness, *, white_te
     if white_text:
         _white(name_run)
     else:
-        name_run.font.color.rgb = MARINE
+        name_run.font.color.rgb = dark
 
     if block.title:
         title_p = container.add_paragraph()
@@ -390,12 +442,27 @@ def _render_contact(container: Container, block, richness: Richness, *, white_te
             # Accent colore reserve aux paliers au-dessus du plus sobre — cf. modulation
             # par palier (V3-5) : le CV classique reste volontairement plus neutre en
             # Goutte, plus marque en Source/Fleuve/Ocean.
-            title_run.font.color.rgb = MARINE if richness == "sobre" else BLEU_BOULGA
+            title_run.font.color.rgb = dark if richness == "sobre" else accent
 
     bits = [block.email, block.phone, block.address, block.linkedin]
     for bit in (b for b in bits if b):
         p = container.add_paragraph()
         run = p.add_run(bit)
+        run.font.size = Pt(9.5)
+        if white_text:
+            _white(run)
+
+    # Etat civil (cv_concours notamment) : ignore silencieusement si absent, jamais
+    # requis pour les autres templates.
+    civil_bits = []
+    if block.birth_date or block.birth_place:
+        parts = [p for p in [block.birth_date and f"Né(e) le {block.birth_date}", block.birth_place] if p]
+        civil_bits.append(" à ".join(parts) if len(parts) == 2 else parts[0])
+    if block.nationality:
+        civil_bits.append(f"Nationalité : {block.nationality}")
+    for line in civil_bits:
+        p = container.add_paragraph()
+        run = p.add_run(line)
         run.font.size = Pt(9.5)
         if white_text:
             _white(run)
@@ -496,7 +563,7 @@ def _render_language_group(container: Container, block, *, white_text: bool) -> 
             _white(run)
 
 
-def _render_heading_in_container(container: Container, block, *, white_text: bool) -> None:
+def _render_heading_in_container(container: Container, block, style: TemplateStyle, *, white_text: bool) -> None:
     """Variante sans style Heading natif — utilisee dans les cellules (CV moderne),
     ou .add_heading() n'existe pas. Pas de TOC concernee pour un CV."""
     p = container.add_paragraph()
@@ -507,7 +574,7 @@ def _render_heading_in_container(container: Container, block, *, white_text: boo
     if white_text:
         _white(run)
     else:
-        run.font.color.rgb = BLEU_BOULGA
+        run.font.color.rgb = RGBColor.from_string(style.accent_hex)
 
 
 def _render_paragraph_in_container(container: Container, block, *, white_text: bool) -> None:
@@ -528,6 +595,25 @@ def _render_bullet_list_in_container(container: Container, block, *, white_text:
             _white(run)
 
 
+def _render_bibliography_in_container(container: Container, block, *, white_text: bool) -> None:
+    """Section 'Publications' du CV academique — reutilise le bloc bibliography deja
+    existant (pro_doc/academic) plutot que d'inventer un type de bloc dedie."""
+    label_p = container.add_paragraph()
+    label_p.paragraph_format.space_before = Pt(10)
+    label_run = label_p.add_run("PUBLICATIONS")
+    label_run.font.size = Pt(10)
+    label_run.font.bold = True
+    if white_text:
+        _white(label_run)
+    for entry in block.entries:
+        p = container.add_paragraph()
+        _bullet_indent(p)
+        run = p.add_run(f"• {entry}")
+        run.font.size = Pt(9.5)
+        if white_text:
+            _white(run)
+
+
 # Renderers qui ne dependent pas du palier — "contact" est special-case a part car son
 # accent colore varie avec la richesse (voir _dispatch_cv_block).
 CV_BLOCK_RENDERERS = {
@@ -536,9 +622,9 @@ CV_BLOCK_RENDERERS = {
     "education": _render_education,
     "skill_group": _render_skill_group,
     "language_group": _render_language_group,
-    "heading": _render_heading_in_container,
     "paragraph": _render_paragraph_in_container,
     "bullet_list": _render_bullet_list_in_container,
+    "bibliography": _render_bibliography_in_container,
 }
 
 # Modulation par palier (V3-5) pour le CV : un signe discret et honnete de la richesse
@@ -551,7 +637,7 @@ _CV_TIER_TAGLINES: dict[Richness, str | None] = {
 }
 
 
-def _append_cv_tagline(container: Container, richness: Richness, *, white_text: bool) -> None:
+def _append_cv_tagline(container: Container, richness: Richness, style: TemplateStyle, *, white_text: bool) -> None:
     text = _CV_TIER_TAGLINES[richness]
     if not text:
         return
@@ -562,25 +648,30 @@ def _append_cv_tagline(container: Container, richness: Richness, *, white_text: 
     if white_text:
         _white(run)
     else:
-        run.font.color.rgb = BLEU_BOULGA
+        run.font.color.rgb = RGBColor.from_string(style.accent_hex)
 
 
-def _dispatch_cv_block(container: Container, block, richness: Richness, *, white_text: bool) -> None:
+def _dispatch_cv_block(
+    container: Container, block, richness: Richness, style: TemplateStyle, *, white_text: bool
+) -> None:
     if block.type == "contact":
-        _render_contact(container, block, richness, white_text=white_text)
+        _render_contact(container, block, richness, style, white_text=white_text)
+        return
+    if block.type == "heading":
+        _render_heading_in_container(container, block, style, white_text=white_text)
         return
     renderer = CV_BLOCK_RENDERERS.get(block.type)
     if renderer is not None:
         renderer(container, block, white_text=white_text)
 
 
-def _render_cv_classic(doc: DocxDocument, blocks: list[Block], richness: Richness) -> None:
+def _render_cv_classic(doc: DocxDocument, blocks: list[Block], richness: Richness, style: TemplateStyle) -> None:
     for block in blocks:
-        _dispatch_cv_block(doc, block, richness, white_text=False)
-    _append_cv_tagline(doc, richness, white_text=False)
+        _dispatch_cv_block(doc, block, richness, style, white_text=False)
+    _append_cv_tagline(doc, richness, style, white_text=False)
 
 
-def _render_cv_sidebar(doc: DocxDocument, blocks: list[Block], richness: Richness) -> None:
+def _render_cv_sidebar(doc: DocxDocument, blocks: list[Block], richness: Richness, style: TemplateStyle) -> None:
     section = doc.sections[0]
     section.left_margin = Cm(0)
     section.right_margin = Cm(0)
@@ -594,7 +685,7 @@ def _render_cv_sidebar(doc: DocxDocument, blocks: list[Block], richness: Richnes
     table.columns[1].width = Cm(15)
     left.width = Cm(6)
     right.width = Cm(15)
-    set_cell_background(left, "0B1F3A")
+    set_cell_background(left, style.dark_hex)
     # Marges internes de cellule : la section entiere est a marge zero (le tableau doit
     # occuper toute la page), donc sans ceci le texte touche directement les bords de
     # page/cellule — seul rempart contre ce collage, vu qu'aucune marge de section
@@ -610,8 +701,8 @@ def _render_cv_sidebar(doc: DocxDocument, blocks: list[Block], richness: Richnes
     sidebar_types = {"contact", "skill_group", "language_group"}
     for block in blocks:
         target, white_text = (left, True) if block.type in sidebar_types else (right, False)
-        _dispatch_cv_block(target, block, richness, white_text=white_text)
-    _append_cv_tagline(left, richness, white_text=True)
+        _dispatch_cv_block(target, block, richness, style, white_text=white_text)
+    _append_cv_tagline(left, richness, style, white_text=True)
 
 
 # --- Dispatch generique (documents pro/academique/lettre — rendu direct dans doc) ----
@@ -680,9 +771,9 @@ def render(document: EngineDocument, template_name: str, tier: str, output_dir: 
     section.bottom_margin = Cm(bottom)
 
     if document.doc_type == "cv" and style.cv_sidebar:
-        _render_cv_sidebar(doc, document.blocks, richness)
+        _render_cv_sidebar(doc, document.blocks, richness, style)
     elif document.doc_type == "cv":
-        _render_cv_classic(doc, document.blocks, richness)
+        _render_cv_classic(doc, document.blocks, richness, style)
     else:
         _render_linear(doc, document.blocks, style, richness)
 

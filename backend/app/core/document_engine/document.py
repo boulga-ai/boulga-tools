@@ -7,7 +7,7 @@ import logging
 
 from pydantic import BaseModel, Field, ValidationError
 
-from app.core.document_engine.blocks import BLOCK_REGISTRY, DOCUMENT_SCHEMAS, Block
+from app.core.document_engine.blocks import BLOCK_REGISTRY, DOCUMENT_SCHEMAS, Block, effective_schema
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +18,10 @@ class Document(BaseModel):
     blocks: list[Block] = Field(default_factory=list)
 
 
-def _allowed_block_types(doc_type: str) -> set[str]:
-    schema = DOCUMENT_SCHEMAS.get(doc_type)
-    return set(schema["blocks"]) if schema else set(BLOCK_REGISTRY.keys())
+def _allowed_block_types(doc_type: str, template: str | None = None) -> set[str]:
+    if doc_type not in DOCUMENT_SCHEMAS:
+        return set(BLOCK_REGISTRY.keys())
+    return set(effective_schema(doc_type, template)["blocks"])
 
 
 def repair_block(raw: dict) -> Block | None:
@@ -51,11 +52,12 @@ def repair_block(raw: dict) -> Block | None:
             return None
 
 
-def validate_document(doc_type: str, data: dict) -> Document:
+def validate_document(doc_type: str, data: dict, template: str | None = None) -> Document:
     """Valide un document complet : ne garde que les blocs conformes au vocabulaire du
-    doc_type. Les blocs hors-vocabulaire ou irrecuperables sont silencieusement ecartes
-    — jamais d'exception qui bloque la generation."""
-    allowed = _allowed_block_types(doc_type)
+    doc_type (eventuellement elargi par le contrat du template, pour cv/cover_letter).
+    Les blocs hors-vocabulaire ou irrecuperables sont silencieusement ecartes — jamais
+    d'exception qui bloque la generation."""
+    allowed = _allowed_block_types(doc_type, template)
     blocks: list[Block] = []
     for raw in data.get("blocks") or []:
         block = repair_block(raw)
@@ -64,10 +66,10 @@ def validate_document(doc_type: str, data: dict) -> Document:
     return Document(doc_type=doc_type, meta=data.get("meta") or {}, blocks=blocks)
 
 
-def blocks_from_raw(doc_type: str, raw_blocks: list[dict]) -> list[Block]:
+def blocks_from_raw(doc_type: str, raw_blocks: list[dict], template: str | None = None) -> list[Block]:
     """Meme logique de reparation/filtrage que validate_document, pour une liste de
     blocs deja parses individuellement (utilise par le streaming JSONL, V3-2/V3-3)."""
-    allowed = _allowed_block_types(doc_type)
+    allowed = _allowed_block_types(doc_type, template)
     blocks: list[Block] = []
     for raw in raw_blocks:
         block = repair_block(raw)

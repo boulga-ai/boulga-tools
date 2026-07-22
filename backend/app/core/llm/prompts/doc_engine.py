@@ -5,7 +5,7 @@ instructions qui laissent le LLM decider."""
 
 import json
 
-from app.core.document_engine.blocks import BLOCK_REGISTRY, DOCUMENT_SCHEMAS
+from app.core.document_engine.blocks import BLOCK_REGISTRY, effective_schema
 from app.core.llm.client import cacheable_system_message
 
 _INTRO = (
@@ -14,9 +14,14 @@ _INTRO = (
     "exclusivement en francais."
 )
 
+# CV et lettre de motivation tiennent en 1-2 pages : l'axe "profondeur" (essentiel/
+# detaille/tres detaille), pense pour des documents longs (pro_doc/academic), n'a pas
+# de sens ici — seule la richesse du template/palier (voir TEMPLATE_OVERRIDES,
+# resolve_model "competence") module leur contenu.
+_DOC_TYPES_WITHOUT_DEPTH = {"cv", "cover_letter"}
 
-def _blocks_vocabulary_text(doc_type: str) -> str:
-    schema = DOCUMENT_SCHEMAS[doc_type]
+
+def _blocks_vocabulary_text(schema: dict) -> str:
     lines = []
     for block_name in schema["blocks"]:
         model_cls = BLOCK_REGISTRY[block_name]
@@ -39,12 +44,12 @@ def _depth_instruction(depth: str) -> str:
     return _DEPTH_GUIDANCE.get(depth, _DEPTH_GUIDANCE["detaille"])
 
 
-def build_analyze_system_prompt(doc_type: str) -> str:
-    schema = DOCUMENT_SCHEMAS[doc_type]
+def build_analyze_system_prompt(doc_type: str, template: str | None = None) -> str:
+    schema = effective_schema(doc_type, template)
     return (
         f"{_INTRO}\n\n"
         f"Nature du document : {schema['description']}\n\n"
-        f"Blocs de contenu disponibles pour ce document :\n{_blocks_vocabulary_text(doc_type)}\n\n"
+        f"Blocs de contenu disponibles pour ce document :\n{_blocks_vocabulary_text(schema)}\n\n"
         f"{schema['guidance']}\n\n"
         "Ton role ICI est d'ANALYSER et d'ENRICHIR ce que le user a fourni, sans "
         "produire le document.\n"
@@ -82,14 +87,17 @@ def build_analyze_system_prompt(doc_type: str) -> str:
     )
 
 
-def build_generate_system_prompt(doc_type: str, depth: str = "detaille") -> str:
-    schema = DOCUMENT_SCHEMAS[doc_type]
+def build_generate_system_prompt(doc_type: str, depth: str = "detaille", template: str | None = None) -> str:
+    schema = effective_schema(doc_type, template)
+    depth_line = (
+        "" if doc_type in _DOC_TYPES_WITHOUT_DEPTH else f"Niveau de detail attendu : {_depth_instruction(depth)}\n\n"
+    )
     return (
         f"{_INTRO}\n\n"
         f"Nature du document : {schema['description']}\n\n"
-        f"Blocs disponibles, avec leurs champs JSON exacts :\n{_blocks_vocabulary_text(doc_type)}\n\n"
+        f"Blocs disponibles, avec leurs champs JSON exacts :\n{_blocks_vocabulary_text(schema)}\n\n"
         f"{schema['guidance']}\n\n"
-        f"Niveau de detail attendu : {_depth_instruction(depth)}\n\n"
+        f"{depth_line}"
         "Tu rediges ce document COMPLET et professionnel en francais, en "
         "assemblant les blocs ci-dessus. Tu decides librement de la structure : "
         "nombre de titres, sous-titres, sections, listes, tableaux — selon le "
@@ -116,11 +124,11 @@ def build_segment_system_prompt(doc_type: str, depth: str = "detaille") -> str:
     rediges par segments successifs (voir documents_engine.py) plutot qu'en un seul
     appel — pour eviter la troncature, le timeout, et le cout excessif d'un document
     de 40+ pages genere d'un coup."""
-    schema = DOCUMENT_SCHEMAS[doc_type]
+    schema = effective_schema(doc_type)
     return (
         f"{_INTRO}\n\n"
         f"Nature du document : {schema['description']}\n\n"
-        f"Blocs disponibles, avec leurs champs JSON exacts :\n{_blocks_vocabulary_text(doc_type)}\n\n"
+        f"Blocs disponibles, avec leurs champs JSON exacts :\n{_blocks_vocabulary_text(schema)}\n\n"
         f"{schema['guidance']}\n\n"
         f"Niveau de detail attendu : {_depth_instruction(depth)}\n\n"
         "Ce document est long : il est redige par segments successifs, chacun "
@@ -201,10 +209,11 @@ def build_messages(context: dict, mode: str) -> list[dict]:
     segments deja rediges."""
     doc_type = context["doc_type"]
     depth = context.get("depth") or "detaille"
+    template = context.get("template")
     system_text = (
-        build_analyze_system_prompt(doc_type)
+        build_analyze_system_prompt(doc_type, template)
         if mode == "analyze"
-        else build_generate_system_prompt(doc_type, depth)
+        else build_generate_system_prompt(doc_type, depth, template)
     )
     messages: list[dict] = [cacheable_system_message(system_text)]
 
