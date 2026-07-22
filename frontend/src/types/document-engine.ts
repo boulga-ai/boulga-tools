@@ -77,6 +77,32 @@ export type WorkState = {
   blocks: DocBlock[];
   documentId: string | null;
   title: string | null;
+  // multiResult (cv/cover_letter) uniquement — voir DocumentWorkspace. Absents pour
+  // pro_doc/academic, qui n'ont pas ce concept de projet nomme/fil de resultats.
+  results?: ResultItem[];
+  projectId?: string;
+  projectName?: string;
+};
+
+// Un document genere dans un projet multiResult (cv/cover_letter) — voir
+// PageResultCard. Fait partie de WorkState/ProjectSnapshot, jamais persiste seul.
+export type ResultItem = { id: string; documentId: string | null; title: string; blocks: DocBlock[]; template: string };
+
+// Un projet archive (voir DocumentWorkspace.handleNewDocument/openProject) : instantane
+// complet de tout ce qu'un projet multiResult porte, hors mise en forme UI (titre en
+// cours d'edition, erreurs d'analyse...). Rangee dans son propre historique quand le
+// user en ouvre un nouveau, jamais supprimee automatiquement.
+export type ProjectSnapshot = {
+  id: string;
+  name: string;
+  cadrage: Record<string, string>;
+  history: ConversationTurn[];
+  chatTurns: ChatTurn[];
+  validatedInfo: Record<string, string>;
+  plan: PlanItem[] | null;
+  results: ResultItem[];
+  template: string;
+  updatedAt: string;
 };
 
 export type GenerateDoneEvent = {

@@ -2,7 +2,21 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Eye, Square, Wand2, Download, Plus, X, Loader2, Pencil, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import {
+  Eye,
+  Square,
+  Wand2,
+  Download,
+  Plus,
+  X,
+  Loader2,
+  Pencil,
+  PanelLeftClose,
+  PanelLeftOpen,
+  ChevronDown,
+  ChevronUp,
+  History,
+} from "lucide-react";
 import { AIInteraction } from "@/components/tools/AIInteraction";
 import { ChatInput } from "@/components/tools/ChatInput";
 import { MarkdownContent } from "@/components/tools/MarkdownContent";
@@ -25,23 +39,19 @@ import {
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { useBlockStream } from "@/hooks/useBlockStream";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
-import { useSessionResults } from "@/hooks/useSessionResults";
 import { apiFetch } from "@/lib/api";
 import type {
   AnalyzeResponse,
   ChatTurn,
   ConversationTurn,
-  DocBlock,
   DocEngineContext,
   DocType,
   PlanItem,
+  ProjectSnapshot,
+  ResultItem,
   WorkState,
 } from "@/types/document-engine";
 import type { InteractionBlock } from "@/types/interaction";
-
-// cv/cover_letter : chaque generation/ajustement s'ajoute a un fil de resultats
-// (multiResult) plutot que d'ecraser un document unique — voir PageResultCard.
-type ResultItem = { id: string; documentId: string | null; title: string; blocks: DocBlock[]; template: string };
 
 export type CadrageField = {
   key: string;
@@ -71,6 +81,27 @@ function saveState(storageKey: string, state: WorkState) {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(storageKey, JSON.stringify(state));
+  } catch {
+    // stockage plein ou indisponible : on continue sans persister, jamais bloquant
+  }
+}
+
+// Projets archives (voir handleNewDocument/openProject) : cle localStorage distincte
+// du WorkState du projet actif, pour ne jamais melanger "en cours" et "historique".
+function loadArchivedProjects(storageKey: string): ProjectSnapshot[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(`${storageKey}:projects`);
+    return raw ? (JSON.parse(raw) as ProjectSnapshot[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveArchivedProjects(storageKey: string, projects: ProjectSnapshot[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(`${storageKey}:projects`, JSON.stringify(projects));
   } catch {
     // stockage plein ou indisponible : on continue sans persister, jamais bloquant
   }
@@ -140,6 +171,20 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
 
+  // Projets nommes (multiResult uniquement) : "Nouveau CV"/"Nouvelle lettre" archive
+  // le projet actif (jamais supprime) et en ouvre un nouveau vierge — voir
+  // handleNewDocument/openProject. Le compteur ne redescend jamais, meme si des
+  // projets sont rouverts/refermes, pour ne jamais reutiliser un nom par defaut.
+  const projectCounterRef = useRef(1);
+  const [projectId, setProjectId] = useState<string>(() => restored.projectId ?? crypto.randomUUID());
+  const [projectName, setProjectName] = useState<string>(() => restored.projectName ?? "Projet 1");
+  const [editingProjectName, setEditingProjectName] = useState(false);
+  const [projectNameDraft, setProjectNameDraft] = useState("");
+  const [archivedProjects, setArchivedProjects] = useState<ProjectSnapshot[]>(() =>
+    multiResult ? loadArchivedProjects(storageKey) : [],
+  );
+  const [historyOpen, setHistoryOpen] = useState(false);
+
   const [userText, setUserText] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<AnalyzeResponse | null>(null);
@@ -150,7 +195,7 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   const [format, setFormat] = useState<"docx" | "pdf">("pdf");
   const [downloading, setDownloading] = useState(false);
   const [attaching, setAttaching] = useState(false);
-  const [results, setResults] = useSessionResults<ResultItem>(`${storageKey}:results`);
+  const [results, setResults] = useState<ResultItem[]>(restored.results ?? []);
   const hasGenerated = multiResult ? results.length > 0 : !!documentId;
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -228,11 +273,33 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
       blocks: effectiveBlocks,
       documentId: effectiveDocId,
       title: effectiveTitle,
+      results: multiResult ? results : undefined,
+      projectId: multiResult ? projectId : undefined,
+      projectName: multiResult ? projectName : undefined,
     };
     if (!disableLocalStorage) saveState(storageKey, state);
     onStateChange?.(state);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cadrage, history, chatTurns, validatedInfo, plan, blocks, documentId, docTitle, results, multiResult]);
+  }, [
+    cadrage,
+    history,
+    chatTurns,
+    validatedInfo,
+    plan,
+    blocks,
+    documentId,
+    docTitle,
+    results,
+    multiResult,
+    projectId,
+    projectName,
+  ]);
+
+  // Historique des projets : persiste independamment du WorkState du projet actif
+  // (cle localStorage separee, voir loadArchivedProjects).
+  useEffect(() => {
+    if (multiResult && !disableLocalStorage) saveArchivedProjects(storageKey, archivedProjects);
+  }, [multiResult, disableLocalStorage, storageKey, archivedProjects]);
 
   function buildContext(extra?: Partial<DocEngineContext>): DocEngineContext {
     // "competence" et "depth" vivent dans le cadrage cote UI (memes selecteurs
@@ -358,19 +425,76 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
     );
   }
 
-  // Change de sujet sans perdre les documents deja generes (qui vivent dans "results",
-  // persiste independamment) — repart du cadrage initial (ex: nom/email pre-remplis
-  // depuis le profil), pas d'un etat totalement vide.
+  function snapshotProject(): ProjectSnapshot {
+    return {
+      id: projectId,
+      name: projectName,
+      cadrage,
+      history,
+      chatTurns,
+      validatedInfo,
+      plan,
+      results,
+      template,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  function isProjectEmpty(snap: Pick<ProjectSnapshot, "results" | "chatTurns">): boolean {
+    return snap.results.length === 0 && snap.chatTurns.length === 0;
+  }
+
+  function loadProjectIntoActive(snap: ProjectSnapshot) {
+    setProjectId(snap.id);
+    setProjectName(snap.name);
+    setCadrage(snap.cadrage);
+    setHistory(snap.history);
+    setChatTurns(snap.chatTurns);
+    setValidatedInfo(snap.validatedInfo);
+    setPlan(snap.plan);
+    setResults(snap.results);
+    setTemplate(snap.template);
+    setAnalysis(null);
+    setAnalyzeError(null);
+    setUserText("");
+  }
+
+  // Change de sujet : archive le projet actif (nomme, jamais supprime — reouvrable
+  // depuis l'historique) et repart d'un projet vierge. Le cadrage initial (nom/email
+  // pre-remplis depuis le profil) est conserve, pas un etat totalement vide.
   function handleNewDocument() {
+    const current = snapshotProject();
+    if (!isProjectEmpty(current)) {
+      setArchivedProjects((prev) => [current, ...prev]);
+    }
+    projectCounterRef.current += 1;
+    setProjectId(crypto.randomUUID());
+    setProjectName(`Projet ${projectCounterRef.current}`);
     setCadrage(initialState?.cadrage ?? {});
     setHistory([]);
     setChatTurns([]);
     setValidatedInfo({});
     setPlan(null);
+    setResults([]);
     setAnalysis(null);
     setAnalyzeError(null);
     setUserText("");
     setTemplate(templates[0]?.value ?? "");
+  }
+
+  // Rouvre un projet archive : il redevient le projet actif (modifiable, on peut y
+  // regenerer/ajuster), et le projet actif courant part a son tour dans l'historique
+  // s'il contient quelque chose — jamais deux projets "actifs" en meme temps.
+  function openProject(id: string) {
+    const target = archivedProjects.find((p) => p.id === id);
+    if (!target) return;
+    const current = snapshotProject();
+    setArchivedProjects((prev) => {
+      const withoutTarget = prev.filter((p) => p.id !== id);
+      return isProjectEmpty(current) ? withoutTarget : [current, ...withoutTarget];
+    });
+    loadProjectIntoActive(target);
+    setHistoryOpen(false);
   }
 
   // Extrait le texte d'un fichier joint (PDF/DOCX/TXT) et l'ajoute au brouillon en
@@ -619,11 +743,75 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
     <div className="flex flex-col gap-3">
       {beforeCadrage}
       {multiResult && newDocumentLabel && (
-        <div className="flex justify-end">
-          <Button variant="outline" size="sm" onClick={handleNewDocument}>
-            <Plus className="size-3.5" />
-            {newDocumentLabel}
-          </Button>
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-2">
+            {editingProjectName ? (
+              <Input
+                autoFocus
+                value={projectNameDraft}
+                onChange={(e) => setProjectNameDraft(e.target.value)}
+                onBlur={() => {
+                  setProjectName(projectNameDraft.trim() || projectName);
+                  setEditingProjectName(false);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                  if (e.key === "Escape") setEditingProjectName(false);
+                }}
+                className="h-7 max-w-[160px] text-sm font-medium"
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setProjectNameDraft(projectName);
+                  setEditingProjectName(true);
+                }}
+                className="group flex min-w-0 items-center gap-1 text-left"
+                title="Cliquer pour renommer le projet"
+              >
+                <span className="truncate text-sm font-medium">{projectName}</span>
+                <Pencil className="size-3 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100" />
+              </button>
+            )}
+            <div className="flex shrink-0 items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setHistoryOpen((v) => !v)}
+                className="flex items-center gap-1 rounded-[6px] px-1.5 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                title="Projets précédents"
+              >
+                <History className="size-3.5" />
+                {archivedProjects.length > 0 && archivedProjects.length}
+                {historyOpen ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
+              </button>
+              <Button variant="outline" size="sm" onClick={handleNewDocument}>
+                <Plus className="size-3.5" />
+                {newDocumentLabel}
+              </Button>
+            </div>
+          </div>
+          {historyOpen && (
+            <div className="flex flex-col gap-1 rounded-[10px] border p-2">
+              {archivedProjects.length === 0 ? (
+                <p className="p-2 text-xs text-muted-foreground">Aucun projet précédent.</p>
+              ) : (
+                archivedProjects.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => openProject(p.id)}
+                    className="flex items-center justify-between gap-2 rounded-[6px] px-2 py-1.5 text-left text-sm hover:bg-accent"
+                  >
+                    <span className="truncate">{p.name}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {p.results.length} document{p.results.length > 1 ? "s" : ""}
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
         </div>
       )}
       {templateConditionsContent && templates.length > 0 && (
