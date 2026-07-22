@@ -1,11 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Menu, PanelLeftClose, PanelLeftOpen, Plus } from "lucide-react";
 import { ToolLayout } from "@/components/tools/ToolLayout";
 import { DocumentWorkspace } from "@/components/tools/DocumentWorkspace";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useAuth } from "@/hooks/useAuth";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { apiFetch } from "@/lib/api";
@@ -81,11 +79,7 @@ export default function AcademicWriterPage() {
   const available = profile ? profile.current_tier !== "introduction" : false;
   const pendingOutline = useToolStore((s) => s.pendingOutline);
   const setPendingOutline = useToolStore((s) => s.setPendingOutline);
-  // Meme seuil que le split interne de DocumentWorkspace (chat/resultat) : en
-  // dessous, pas assez de largeur pour un 3e panel redimensionnable, on retombe
-  // sur la liste de projets en Sheet coulissant + empilement vertical simple.
   const isDesktop = useMediaQuery("(min-width: 1024px)");
-  const [projectListCollapsed, setProjectListCollapsed] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState<AcademicSession | null>(null);
@@ -166,6 +160,23 @@ export default function AcademicWriterPage() {
     }
   }
 
+  // Renomme la session active (nom de projet, affiche dans le popover d'historique
+  // des AUTRES sessions) — distinct de persistState : declenche immediatement, pas
+  // debounce, puisque c'est une action explicite du user (clic + validation).
+  async function renameActiveSession(title: string) {
+    if (!session) return;
+    const res = await apiFetch(`/api/v1/tools/generators/academic/sessions/${session.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setSession((current) => (current?.id === updated.id ? updated : current));
+      setSessions((prev) => prev.map((s) => (s.id === updated.id ? { ...s, title: updated.title } : s)));
+    }
+  }
+
   function persistState(state: WorkState) {
     if (!session) return;
     const sessionId = session.id;
@@ -181,7 +192,10 @@ export default function AcademicWriterPage() {
           body: JSON.stringify({
             work_state: state,
             doc_type: state.cadrage.doc_type || session.doc_type,
-            title: state.title || undefined,
+            // projectName (nom stable du projet, auto-nomme ou renomme) prime sur
+            // title (titre du DERNIER document genere, qui change a chaque carte) —
+            // c'est projectName qui doit apparaitre dans le popover d'historique.
+            title: state.projectName || state.title || undefined,
           }),
         });
         if (res.ok) {
@@ -189,6 +203,7 @@ export default function AcademicWriterPage() {
           // N'applique la reponse qu'a la session encore active : si le user a
           // deja bascule ailleurs, ne pas ecraser le projet courant.
           setSession((current) => (current?.id === sessionId ? updated : current));
+          setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, title: updated.title } : s)));
         }
       }, 800),
     );
@@ -223,55 +238,14 @@ export default function AcademicWriterPage() {
     );
   }
 
-  // Liste de projets persistante — meme patron que /tools/chat (sidebar desktop,
-  // Sheet coulissant en mobile) : selectionner un projet charge SON work_state,
-  // "+ Nouveau projet" en cree un vide sans fermer les autres. Largeur geree par
-  // le parent (ResizablePanel en desktop, w-64 fixe du Sheet en mobile).
-  const projectList = (
-    <div className="flex h-full w-full flex-col gap-2 border-r bg-card p-3">
-      <Button variant="outline" onClick={createNewProject} className="w-full justify-start">
-        <Plus className="size-4" />
-        Nouveau projet
-      </Button>
-      <div className="flex flex-1 flex-col gap-0.5 overflow-y-auto">
-        {sessions.map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            onClick={() => switchToSession(s.id)}
-            className={cn(
-              "flex flex-col items-start gap-0.5 rounded-[8px] px-2 py-1.5 text-left text-sm hover:bg-accent",
-              session?.id === s.id && "bg-blue-50 text-bleu-boulga",
-            )}
-          >
-            <span className="block w-full truncate">{s.title || "Sans titre"}</span>
-            <span className="block text-xs text-muted-foreground">{relativeDate(s.updated_at)}</span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-
-  const content = (
+  // Le "projet" (nom + historique + bouton nouveau) vit desormais DANS
+  // DocumentWorkspace (leftPanel), au meme endroit que cv/cover_letter — voir
+  // projectsControl. La session DB existante (sessions/switchToSession/
+  // createNewProject, deja en place) EST la source de cet historique ; plus de
+  // sidebar/Sheet separee ici.
+  return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
       <div className="flex items-center gap-2 border-b bg-card px-4 py-2.5 lg:px-6">
-        <Sheet>
-          <SheetTrigger className="flex size-8 items-center justify-center rounded-[8px] hover:bg-accent lg:hidden">
-            <Menu className="size-5" />
-          </SheetTrigger>
-          <SheetContent side="left" className="w-64 p-0">
-            <SheetTitle className="sr-only">Projets</SheetTitle>
-            {projectList}
-          </SheetContent>
-        </Sheet>
-        <button
-          type="button"
-          onClick={() => setProjectListCollapsed((p) => !p)}
-          title={projectListCollapsed ? "Afficher les projets" : "Masquer les projets"}
-          className="hidden size-8 items-center justify-center rounded-[8px] text-muted-foreground hover:bg-accent hover:text-foreground lg:flex"
-        >
-          {projectListCollapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
-        </button>
         <span className="font-medium">Document académique</span>
       </div>
 
@@ -298,6 +272,21 @@ export default function AcademicWriterPage() {
             storageKey="boulga:workspace:academic"
             disableLocalStorage
             templateUpfront
+            multiResult
+            newDocumentLabel="Nouveau document"
+            projectsControl={
+              session
+                ? {
+                    activeName: session.title || "Sans titre",
+                    onRenameActive: renameActiveSession,
+                    history: sessions
+                      .filter((s) => s.id !== session.id)
+                      .map((s) => ({ id: s.id, name: s.title || "Sans titre", meta: relativeDate(s.updated_at) })),
+                    onOpen: switchToSession,
+                    onCreate: createNewProject,
+                  }
+                : undefined
+            }
             cadrageFields={[
               { key: "doc_type", label: "Type de document", options: TYPES },
               { key: "domain", label: "Domaine", options: DOMAINS },
@@ -307,29 +296,15 @@ export default function AcademicWriterPage() {
             textareaLabel="Décrivez votre sujet et ce que vous savez déjà"
             textareaPlaceholder="Ex : Mon mémoire porte sur la transformation digitale des PME au Burkina Faso. J'étudie en master gestion à l'université de Ouagadougou. Mon encadreur est le Pr. Sawadogo..."
             templates={ACADEMIC_TEMPLATES}
-            initialState={session?.work_state ?? { cadrage: { doc_type: TYPES[0].value } }}
+            initialState={{
+              ...(session?.work_state ?? { cadrage: { doc_type: TYPES[0].value } }),
+              projectId: session?.id,
+              projectName: session?.title ?? undefined,
+            }}
             onStateChange={persistState}
           />
         </div>
       </div>
-    </div>
-  );
-
-  if (!isDesktop) {
-    return <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{content}</div>;
-  }
-
-  // Liste de projets en largeur fixe (pas de resize ici) : un split
-  // redimensionnable imbrique dans celui de DocumentWorkspace (chat/resultat)
-  // faisait glisser ce panel a une largeur quasi nulle — deux Group
-  // redimensionnables imbriques ne mesurent pas correctement l'un dans l'autre.
-  // Un seul niveau de resize (chat/resultat, dans DocumentWorkspace) suffit.
-  // Repliable comme la sidebar principale : "Masquer les projets" dans la barre
-  // de titre.
-  return (
-    <div className="flex min-h-0 flex-1 overflow-hidden">
-      {!projectListCollapsed && <div className="w-64 shrink-0">{projectList}</div>}
-      {content}
     </div>
   );
 }

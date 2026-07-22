@@ -62,6 +62,24 @@ export type CadrageField = {
   options?: { value: string; label: string }[];
 };
 
+// Mode "controle" du bloc projet (nom + historique + bouton nouveau, voir leftPanel) :
+// pro_doc/academic ont deja un historique de projets persiste cote base (sessions,
+// voir document_sessions.py) — quand projectsControl est fourni, le bloc affiche et
+// manipule CETTE source externe au lieu de son archivage local par defaut
+// (archivedProjects/handleNewDocument/openProject, localStorage, cv/cover_letter).
+// Le rendu (meme popover, meme bouton) reste identique dans les deux modes.
+export type ProjectsControl = {
+  activeName: string;
+  onRenameActive: (name: string) => void;
+  // meta : libelle secondaire libre affiche a droite de chaque entree (ex. "3
+  // documents" pour cv/cover_letter en mode local, une date relative pour
+  // pro_doc/academic — leur liste de sessions n'a pas de compte de documents bon
+  // marche, cf. document_sessions.list_sessions qui exclut deliberement work_state).
+  history: { id: string; name: string; meta?: string }[];
+  onOpen: (id: string) => void;
+  onCreate: () => void;
+};
+
 function loadState(storageKey: string): Partial<WorkState> | null {
   if (typeof window === "undefined") return null;
   try {
@@ -154,6 +172,8 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   // sujet SANS perdre les documents deja generes — eux persistent independamment.
   multiResult?: boolean;
   newDocumentLabel?: string;
+  // pro_doc/academic uniquement — voir le type ProjectsControl ci-dessus.
+  projectsControl?: ProjectsControl;
 }>(function DocumentWorkspace({
   docType,
   storageKey,
@@ -170,6 +190,7 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   templateUpfront = false,
   multiResult = false,
   newDocumentLabel,
+  projectsControl,
 }, ref) {
   const [restored] = useState<Partial<WorkState>>(() =>
     disableLocalStorage ? (initialState ?? {}) : (loadState(storageKey) ?? initialState ?? {}),
@@ -772,83 +793,102 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   const leftPanel = (
     <div className="flex flex-col gap-3">
       {beforeCadrage}
-      {multiResult && newDocumentLabel && (
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between gap-2">
-            {editingProjectName ? (
-              <Input
-                autoFocus
-                value={projectNameDraft}
-                onChange={(e) => setProjectNameDraft(e.target.value)}
-                onBlur={() => {
-                  setProjectName(projectNameDraft.trim() || projectName);
-                  setEditingProjectName(false);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                  if (e.key === "Escape") setEditingProjectName(false);
-                }}
-                className="h-7 max-w-[160px] text-sm font-medium"
-              />
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  setProjectNameDraft(projectName);
-                  setEditingProjectName(true);
-                }}
-                className="group flex min-w-0 items-center gap-1 text-left"
-                title="Cliquer pour renommer le projet"
-              >
-                <span className="truncate text-sm font-medium">{projectName}</span>
-                <Pencil className="size-3 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100" />
-              </button>
-            )}
-            <div className="flex shrink-0 items-center gap-1.5">
-              <Popover open={historyOpen} onOpenChange={setHistoryOpen}>
-                <PopoverTrigger
-                  render={
-                    <button
-                      type="button"
-                      className="flex items-center gap-1 rounded-[6px] px-1.5 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
-                      title="Projets précédents"
-                    />
-                  }
+      {multiResult && newDocumentLabel && (() => {
+        // projectsControl (pro_doc/academic) remplace uniquement la donnee et les
+        // handlers par une source externe (sessions DB) — le rendu ci-dessous est
+        // partage a l'identique par les deux modes.
+        const activeName = projectsControl ? projectsControl.activeName : projectName;
+        const historyList = projectsControl
+          ? projectsControl.history
+          : archivedProjects.map((p) => ({
+              id: p.id,
+              name: p.name,
+              meta: `${p.results.length} document${p.results.length > 1 ? "s" : ""}`,
+            }));
+        const commitRename = (draft: string) => {
+          const finalName = draft.trim() || activeName;
+          if (projectsControl) projectsControl.onRenameActive(finalName);
+          else setProjectName(finalName);
+        };
+        const openHistoryEntry = (id: string) => (projectsControl ? projectsControl.onOpen(id) : openProject(id));
+        const createNew = () => (projectsControl ? projectsControl.onCreate() : handleNewDocument());
+
+        return (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
+              {editingProjectName ? (
+                <Input
+                  autoFocus
+                  value={projectNameDraft}
+                  onChange={(e) => setProjectNameDraft(e.target.value)}
+                  onBlur={() => {
+                    commitRename(projectNameDraft);
+                    setEditingProjectName(false);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                    if (e.key === "Escape") setEditingProjectName(false);
+                  }}
+                  className="h-7 max-w-[160px] text-sm font-medium"
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProjectNameDraft(activeName);
+                    setEditingProjectName(true);
+                  }}
+                  className="group flex min-w-0 items-center gap-1 text-left"
+                  title="Cliquer pour renommer le projet"
                 >
-                  <History className="size-3.5" />
-                  {archivedProjects.length > 0 && archivedProjects.length}
-                  {historyOpen ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
-                </PopoverTrigger>
-                {/* Flottant plutot qu'un bloc inline : sinon la liste pousse tout le
-                    contenu en dessous (grille de templates, chat...) a chaque ouverture. */}
-                <PopoverContent align="start" className="flex max-h-80 flex-col gap-1 overflow-y-auto">
-                  {archivedProjects.length === 0 ? (
-                    <p className="p-2 text-xs text-muted-foreground">Aucun projet précédent.</p>
-                  ) : (
-                    archivedProjects.map((p) => (
+                  <span className="truncate text-sm font-medium">{activeName}</span>
+                  <Pencil className="size-3 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100" />
+                </button>
+              )}
+              <div className="flex shrink-0 items-center gap-1.5">
+                <Popover open={historyOpen} onOpenChange={setHistoryOpen}>
+                  <PopoverTrigger
+                    render={
                       <button
-                        key={p.id}
                         type="button"
-                        onClick={() => openProject(p.id)}
-                        className="flex items-center justify-between gap-2 rounded-[6px] px-2 py-1.5 text-left text-sm hover:bg-accent"
-                      >
-                        <span className="truncate">{p.name}</span>
-                        <span className="shrink-0 text-xs text-muted-foreground">
-                          {p.results.length} document{p.results.length > 1 ? "s" : ""}
-                        </span>
-                      </button>
-                    ))
-                  )}
-                </PopoverContent>
-              </Popover>
-              <Button variant="outline" size="sm" onClick={handleNewDocument}>
-                <Plus className="size-3.5" />
-                {newDocumentLabel}
-              </Button>
+                        className="flex items-center gap-1 rounded-[6px] px-1.5 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                        title="Projets précédents"
+                      />
+                    }
+                  >
+                    <History className="size-3.5" />
+                    {historyList.length > 0 && historyList.length}
+                    {historyOpen ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
+                  </PopoverTrigger>
+                  {/* Flottant plutot qu'un bloc inline : sinon la liste pousse tout le
+                      contenu en dessous (grille de templates, chat...) a chaque ouverture. */}
+                  <PopoverContent align="start" className="flex max-h-80 flex-col gap-1 overflow-y-auto">
+                    {historyList.length === 0 ? (
+                      <p className="p-2 text-xs text-muted-foreground">Aucun projet précédent.</p>
+                    ) : (
+                      historyList.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => openHistoryEntry(p.id)}
+                          className="flex items-center justify-between gap-2 rounded-[6px] px-2 py-1.5 text-left text-sm hover:bg-accent"
+                        >
+                          <span className="truncate">{p.name}</span>
+                          {p.meta && <span className="shrink-0 text-xs text-muted-foreground">{p.meta}</span>}
+                        </button>
+                      ))
+                    )}
+                  </PopoverContent>
+                </Popover>
+                <Button variant="outline" size="sm" onClick={createNew}>
+                  <Plus className="size-3.5" />
+                  {newDocumentLabel}
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
       {(templateConditionsContent || templateUpfront) && templates.length > 0 && (
         <div className="flex flex-col gap-1.5">
           <Label className="text-xs text-muted-foreground">Modèle</Label>
