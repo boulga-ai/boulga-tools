@@ -22,6 +22,22 @@ def insert_document_draft(document_id: str, user_id: str, tool: str, title: str,
     return result.data[0]
 
 
+def update_document_content(document_id: str, user_id: str, title: str, content_json: dict) -> dict | None:
+    """Met a jour le contenu (blocs) d'un document deja insere — utilise pendant une
+    generation segmentee (documents longs, voir documents_engine.py) pour persister
+    apres CHAQUE segment plutot qu'une seule fois a la toute fin : un echec en cours
+    de route laisse alors un document partiel recuperable, jamais rien du tout."""
+    client = get_service_client()
+    result = (
+        client.table("documents")
+        .update({"title": title, "content_json": content_json})
+        .eq("id", document_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    return result.data[0] if result.data else None
+
+
 def finalize_document_render(
     document_id: str,
     user_id: str,

@@ -45,6 +45,7 @@ import type {
   AnalyzeResponse,
   ChatTurn,
   ConversationTurn,
+  DocBlock,
   DocEngineContext,
   DocType,
   PlanItem,
@@ -444,26 +445,42 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
     const genTemplate = template;
     const isFirstResult = multiResult && results.length === 0;
     if (!multiResult) setDocumentId(null);
+
+    // Partage entre succes complet (done) et generation longue interrompue en
+    // cours de route (partial, voir PartialGenerateEvent) : dans les deux cas un
+    // document existe et merite sa carte — seul le message affiche differe.
+    function applyResult(documentId: string | null, title: string, blocks: DocBlock[]) {
+      if (multiResult) {
+        setResults((prev) => [
+          ...prev,
+          { id: crypto.randomUUID(), documentId, title, blocks, template: genTemplate },
+        ]);
+        // Nomme le projet a partir du contexte (poste vise) ou, a defaut, du titre
+        // genere — mais seulement pour son tout premier document et seulement si le
+        // user n'a pas deja renomme le projet (le nom par defaut reste "Projet N").
+        if (isFirstResult && DEFAULT_PROJECT_NAME_RE.test(projectName)) {
+          const autoName = cadrage.target_role?.trim() || title;
+          if (autoName) setProjectName(autoName);
+        }
+      } else {
+        setDocumentId(documentId);
+        setDocTitle(title);
+      }
+    }
+
     await start(
       `/api/v1/documents/${docType}/generate`,
       { context: buildContext({ adjust_instruction: instruction }) },
-      (done) => {
-        if (multiResult) {
-          setResults((prev) => [
-            ...prev,
-            { id: crypto.randomUUID(), documentId: done.document_id, title: done.title, blocks: done.blocks, template: genTemplate },
-          ]);
-          // Nomme le projet a partir du contexte (poste vise) ou, a defaut, du titre
-          // genere — mais seulement pour son tout premier document et seulement si le
-          // user n'a pas deja renomme le projet (le nom par defaut reste "Projet N").
-          if (isFirstResult && DEFAULT_PROJECT_NAME_RE.test(projectName)) {
-            const autoName = cadrage.target_role?.trim() || done.title;
-            if (autoName) setProjectName(autoName);
-          }
-        } else {
-          setDocumentId(done.document_id);
-          setDocTitle(done.title);
-        }
+      (done) => applyResult(done.document_id, done.title, done.blocks),
+      (partial) => {
+        const segmentInfo =
+          partial.completed_segments != null && partial.total_segments != null
+            ? ` (section ${partial.completed_segments}/${partial.total_segments})`
+            : "";
+        toast.warning("Génération interrompue", {
+          description: `Le document a été enregistré tel quel${segmentInfo} — vous pouvez le télécharger ou relancer une génération.`,
+        });
+        applyResult(partial.document_id, partial.title, partial.blocks);
       },
     );
   }

@@ -120,3 +120,18 @@ export type GenerateDoneEvent = {
   title: string;
   blocks: DocBlock[];
 };
+
+// Generation longue (academique/pro_doc segmentes) interrompue en cours de route
+// (timeout, erreur LLM...) apres qu'au moins un segment ait reussi — voir
+// documents_engine.py generate_document. Le document partiel est deja sauvegarde
+// cote backend (document_id valide, telechargeable) : rien n'est perdu, seul ce
+// qui restait a rediger manque. completed_segments/total_segments valent null pour
+// une generation non segmentee (l'echec n'a alors aucune notion de "segment").
+export type PartialGenerateEvent = {
+  document_id: string | null;
+  title: string;
+  blocks: DocBlock[];
+  completed_segments: number | null;
+  total_segments: number | null;
+  message: string;
+};

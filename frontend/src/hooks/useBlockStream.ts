@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api";
-import type { DocBlock, GenerateDoneEvent } from "@/types/document-engine";
+import type { DocBlock, GenerateDoneEvent, PartialGenerateEvent } from "@/types/document-engine";
 
 type ErrorEvent = { code: string; message: string };
 
@@ -20,7 +20,16 @@ export function useBlockStream() {
   const [progress, setProgress] = useState<StreamProgress | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
 
-  const start = useCallback(async (path: string, body: unknown, onDone?: (data: GenerateDoneEvent) => void) => {
+  const start = useCallback(async (
+    path: string,
+    body: unknown,
+    onDone?: (data: GenerateDoneEvent) => void,
+    // Generation longue interrompue APRES qu'au moins un segment ait reussi — voir
+    // PartialGenerateEvent. Distinct de onDone : le document est incomplet mais
+    // deja sauvegarde, jamais confondu avec un succes ni avec l'erreur seche (qui
+    // reste geree via le state `error` quand rien n'est recuperable).
+    onPartial?: (data: PartialGenerateEvent) => void,
+  ) => {
     setBlocks([]);
     setError(null);
     setIsQuotaError(false);
@@ -85,6 +94,8 @@ export function useBlockStream() {
             setProgress({ index: p.index, total: p.total });
           } else if (eventType === "done") {
             onDone?.(parsed as unknown as GenerateDoneEvent);
+          } else if (eventType === "partial") {
+            onPartial?.(parsed as unknown as PartialGenerateEvent);
           } else if (eventType === "error") {
             const errEvent = parsed as unknown as ErrorEvent;
             setError(errEvent.message || "Une erreur est survenue. Veuillez réessayer.");

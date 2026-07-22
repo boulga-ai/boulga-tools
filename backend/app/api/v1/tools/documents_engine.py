@@ -14,7 +14,7 @@ from sse_starlette.sse import EventSourceResponse
 from app.config import settings
 from app.core.document_engine.blocks import DOCUMENT_SCHEMAS
 from app.core.document_engine.document import Document, validate_document
-from app.core.documents import insert_document_draft
+from app.core.documents import insert_document_draft, update_document_content
 from app.core.llm.client import OpenRouterError, complete_json, compute_cost, stream_blocks
 from app.core.llm.prompts.doc_engine import build_messages, build_segment_messages
 from app.core.llm.router import ModelNotAvailableError, resolve_model
@@ -165,7 +165,9 @@ async def generate_document(
     """Toujours disponible, meme sans jamais avoir appele /analyze et meme avec un
     contexte partiel : le LLM construit son propre plan en interne et produit le
     document complet. Streame chaque bloc en SSE des qu'il est parsable (JSONL),
-    puis persiste le JSON final (sans rendre de fichier — voir V3-5).
+    et persiste le document au fur et a mesure (voir _persist) plutot qu'une seule
+    fois a la toute fin — un echec en cours de route ne perd alors jamais le
+    travail deja fait, seulement ce qu'il restait a rediger.
 
     Pour les documents longs (academique ou pro_doc) avec un plan long (au-dela de
     settings.LONG_DOC_SEGMENT_THRESHOLD sections), la generation est decoupee en
@@ -184,6 +186,28 @@ async def generate_document(
     async def event_stream():
         raw_blocks: list[dict] = []
         total_usage = {"tokens_in": 0, "tokens_out": 0}
+        document_id = str(uuid.uuid4())
+        persisted = False
+        completed_segments = 0
+        total_segments = 0
+
+        def _persist(blocks: list[dict]) -> tuple[Document, str]:
+            """Valide et sauvegarde l'etat courant du document — insert au tout
+            premier appel reussi, update ensuite (voir update_document_content).
+            N'attrape jamais d'exception elle-meme : chaque appelant decide comment
+            reagir a un echec de persistance selon son contexte (segment suivant,
+            recuperation partielle, ou fin normale)."""
+            nonlocal persisted
+            document = validate_document(
+                doc_type, {"blocks": blocks, "meta": body.context.cadrage}, body.context.template
+            )
+            title = _infer_title(doc_type, document, body.context.cadrage)
+            if not persisted:
+                insert_document_draft(document_id, user["user_id"], doc_type, title, document.model_dump(mode="json"))
+                persisted = True
+            else:
+                update_document_content(document_id, user["user_id"], title, document.model_dump(mode="json"))
+            return document, title
 
         try:
             if segmented:
@@ -215,6 +239,11 @@ async def generate_document(
                             total_usage["tokens_in"] += chunk["tokens_in"]
                             total_usage["tokens_out"] += chunk["tokens_out"]
                     summaries.append(segment_summary or _fallback_summary(segment_blocks))
+                    completed_segments = i + 1
+                    try:
+                        _persist(raw_blocks)
+                    except Exception:
+                        pass  # retente au segment suivant ; ne casse jamais le flux pour un souci de sauvegarde
                     yield {
                         "event": "segment_done",
                         "data": json.dumps({"index": i + 1, "total": total_segments}),
@@ -228,6 +257,29 @@ async def generate_document(
                     elif chunk["type"] == "usage":
                         total_usage = {"tokens_in": chunk["tokens_in"], "tokens_out": chunk["tokens_out"]}
         except OpenRouterError as exc:
+            if raw_blocks:
+                # Une partie du document a deja ete generee (au moins un segment
+                # complet, ou des blocs du chemin non segmente) : sauvegarde-la telle
+                # quelle plutot que de tout perdre — le document reste consultable/
+                # telechargeable, meme incomplet, au lieu de disparaitre sans trace.
+                try:
+                    document, title = _persist(raw_blocks)
+                    yield {
+                        "event": "partial",
+                        "data": json.dumps(
+                            {
+                                "document_id": document_id,
+                                "title": title,
+                                "blocks": [b.model_dump(mode="json") for b in document.blocks],
+                                "completed_segments": completed_segments if segmented else None,
+                                "total_segments": total_segments if segmented else None,
+                                "message": str(exc),
+                            }
+                        ),
+                    }
+                    return
+                except Exception:
+                    pass  # la sauvegarde de secours a aussi echoue ; retombe sur l'erreur seche ci-dessous
             yield {"event": "error", "data": json.dumps({"code": "openrouter_error", "message": str(exc)})}
             return
 
@@ -245,28 +297,22 @@ async def generate_document(
         except Exception:
             pass  # le document a deja ete livre ; ne pas casser le flux sur un souci de log
 
-        document = validate_document(
-            doc_type, {"blocks": raw_blocks, "meta": body.context.cadrage}, body.context.template
-        )
-        title = _infer_title(doc_type, document, body.context.cadrage)
-
-        document_id = str(uuid.uuid4())
         try:
-            insert_document_draft(
-                document_id,
-                user["user_id"],
-                doc_type,
-                title,
-                document.model_dump(mode="json"),
-            )
+            document, title = _persist(raw_blocks)
         except Exception:
-            document_id = None  # le document a deja ete livre au frontend ; la persistance echoue proprement
+            # Le document a deja ete livre au frontend (blocs streames) ; la
+            # persistance finale echoue proprement — document_id reste invalide
+            # (persisted est reste a False si c'etait le tout premier essai).
+            document = validate_document(
+                doc_type, {"blocks": raw_blocks, "meta": body.context.cadrage}, body.context.template
+            )
+            title = _infer_title(doc_type, document, body.context.cadrage)
 
         yield {
             "event": "done",
             "data": json.dumps(
                 {
-                    "document_id": document_id,
+                    "document_id": document_id if persisted else None,
                     "title": title,
                     "blocks": [b.model_dump(mode="json") for b in document.blocks],
                 }
