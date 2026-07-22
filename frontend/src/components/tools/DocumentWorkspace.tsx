@@ -29,6 +29,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -70,6 +71,11 @@ function loadState(storageKey: string): Partial<WorkState> | null {
     return null;
   }
 }
+
+// Nom par defaut d'un projet fraichement cree (voir handleNewDocument) — sert aussi
+// a detecter si le user l'a deja renomme (auto-nommage desactive des qu'il ne
+// correspond plus a ce format, voir handleGenerate).
+const DEFAULT_PROJECT_NAME_RE = /^Projet \d+$/;
 
 let turnCounter = 0;
 function newTurnId(): string {
@@ -407,6 +413,7 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
 
   async function handleGenerate(instruction?: string) {
     const genTemplate = template;
+    const isFirstResult = multiResult && results.length === 0;
     if (!multiResult) setDocumentId(null);
     await start(
       `/api/v1/documents/${docType}/generate`,
@@ -417,6 +424,13 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
             ...prev,
             { id: crypto.randomUUID(), documentId: done.document_id, title: done.title, blocks: done.blocks, template: genTemplate },
           ]);
+          // Nomme le projet a partir du contexte (poste vise) ou, a defaut, du titre
+          // genere — mais seulement pour son tout premier document et seulement si le
+          // user n'a pas deja renomme le projet (le nom par defaut reste "Projet N").
+          if (isFirstResult && DEFAULT_PROJECT_NAME_RE.test(projectName)) {
+            const autoName = cadrage.target_role?.trim() || done.title;
+            if (autoName) setProjectName(autoName);
+          }
         } else {
           setDocumentId(done.document_id);
           setDocTitle(done.title);
@@ -716,8 +730,12 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
               blocks={item.blocks}
               template={item.template}
               accentColor={item.accentColor}
+              darkColor={item.darkColor}
               onAccentColorChange={(hex) =>
                 setResults((prev) => prev.map((r) => (r.id === item.id ? { ...r, accentColor: hex } : r)))
+              }
+              onDarkColorChange={(hex) =>
+                setResults((prev) => prev.map((r) => (r.id === item.id ? { ...r, darkColor: hex } : r)))
               }
               onDelete={() => setResults((prev) => prev.filter((r) => r.id !== item.id))}
             />
@@ -779,43 +797,48 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
               </button>
             )}
             <div className="flex shrink-0 items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => setHistoryOpen((v) => !v)}
-                className="flex items-center gap-1 rounded-[6px] px-1.5 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
-                title="Projets précédents"
-              >
-                <History className="size-3.5" />
-                {archivedProjects.length > 0 && archivedProjects.length}
-                {historyOpen ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
-              </button>
+              <Popover open={historyOpen} onOpenChange={setHistoryOpen}>
+                <PopoverTrigger
+                  render={
+                    <button
+                      type="button"
+                      className="flex items-center gap-1 rounded-[6px] px-1.5 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                      title="Projets précédents"
+                    />
+                  }
+                >
+                  <History className="size-3.5" />
+                  {archivedProjects.length > 0 && archivedProjects.length}
+                  {historyOpen ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
+                </PopoverTrigger>
+                {/* Flottant plutot qu'un bloc inline : sinon la liste pousse tout le
+                    contenu en dessous (grille de templates, chat...) a chaque ouverture. */}
+                <PopoverContent align="start" className="flex max-h-80 flex-col gap-1 overflow-y-auto">
+                  {archivedProjects.length === 0 ? (
+                    <p className="p-2 text-xs text-muted-foreground">Aucun projet précédent.</p>
+                  ) : (
+                    archivedProjects.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => openProject(p.id)}
+                        className="flex items-center justify-between gap-2 rounded-[6px] px-2 py-1.5 text-left text-sm hover:bg-accent"
+                      >
+                        <span className="truncate">{p.name}</span>
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {p.results.length} document{p.results.length > 1 ? "s" : ""}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </PopoverContent>
+              </Popover>
               <Button variant="outline" size="sm" onClick={handleNewDocument}>
                 <Plus className="size-3.5" />
                 {newDocumentLabel}
               </Button>
             </div>
           </div>
-          {historyOpen && (
-            <div className="flex flex-col gap-1 rounded-[10px] border p-2">
-              {archivedProjects.length === 0 ? (
-                <p className="p-2 text-xs text-muted-foreground">Aucun projet précédent.</p>
-              ) : (
-                archivedProjects.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => openProject(p.id)}
-                    className="flex items-center justify-between gap-2 rounded-[6px] px-2 py-1.5 text-left text-sm hover:bg-accent"
-                  >
-                    <span className="truncate">{p.name}</span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {p.results.length} document{p.results.length > 1 ? "s" : ""}
-                    </span>
-                  </button>
-                ))
-              )}
-            </div>
-          )}
         </div>
       )}
       {templateConditionsContent && templates.length > 0 && (

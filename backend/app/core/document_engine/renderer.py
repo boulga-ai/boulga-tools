@@ -758,6 +758,7 @@ def render(
     tier: str,
     output_dir: Path,
     accent_override: str | None = None,
+    dark_override: str | None = None,
 ) -> Path:
     style = TEMPLATE_STYLES.get(template_name)
     if style is None:
@@ -766,11 +767,16 @@ def render(
         raise RendererError(
             f"Le template « {template_name} » ne s'applique pas au type « {document.doc_type} »."
         )
-    # Couleur d'accent choisie par le user (palette curatee, voir palette.py) : ne
-    # remplace jamais dark_hex, garde volontairement le style sombre du template pour
-    # les elements non-accentues (nom du contact, titres profonds...).
-    if accent_override:
-        style = replace(style, accent_hex=accent_override)
+    # Couleurs choisies par le user (palette curatee, voir palette.py) : accent_override
+    # couvre les titres/accents, dark_override le nom/les elements secondaires et,
+    # pour les templates a sidebar/bandeau, leur fond colore — le fond blanc de la
+    # page elle-meme n'est jamais concerne, uniquement ces deux teintes de style.
+    if accent_override or dark_override:
+        style = replace(
+            style,
+            accent_hex=accent_override or style.accent_hex,
+            dark_hex=dark_override or style.dark_hex,
+        )
 
     richness = _tier_richness(tier)
     doc = new_document(style.font_name)

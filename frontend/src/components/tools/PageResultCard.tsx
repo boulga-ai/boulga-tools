@@ -2,15 +2,50 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Check, Download, Expand, Loader2, Trash2 } from "lucide-react";
+import { Check, Download, Expand, Loader2, Palette, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DocumentRenderer } from "@/components/tools/DocumentRenderer";
 import { FormatSelector } from "@/components/tools/FormatSelector";
 import { ACCENT_PALETTE } from "@/lib/accent-palette";
 import { apiFetch } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { DocBlock } from "@/types/document-engine";
+
+function ColorSwatchRow({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string | undefined;
+  onChange: (hex: string | undefined) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <p className="text-xs font-medium text-muted-foreground">{label}</p>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {ACCENT_PALETTE.map((c) => (
+          <button
+            key={c.hex}
+            type="button"
+            onClick={() => onChange(value === c.hex ? undefined : c.hex)}
+            aria-label={c.label}
+            title={c.label}
+            className={cn(
+              "flex size-6 items-center justify-center rounded-full transition-shadow",
+              value === c.hex && "ring-2 ring-foreground ring-offset-2",
+            )}
+            style={{ backgroundColor: `#${c.hex}` }}
+          >
+            {value === c.hex && <Check className="size-3.5 text-white" />}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 // Carte "miniature de page" : boite a ratio A4 fixe, contenu recadre (overflow
 // hidden) — montre le debut du document tel quel, jamais retreci pour tout faire
@@ -21,18 +56,22 @@ export function PageResultCard({
   blocks,
   template,
   accentColor,
+  darkColor,
   onAccentColorChange,
+  onDarkColorChange,
   onDelete,
 }: {
   documentId: string | null;
   title: string;
   blocks: DocBlock[];
   template: string;
-  // Undefined = couleur par defaut du template (voir lib/template-styles.ts). Vit
+  // Undefined = couleur par defaut du template (voir lib/template-styles.ts). Vivent
   // dans le ResultItem parent (pas un state local) pour survivre a la fermeture du
-  // modal et au rechargement de la page (persiste avec le reste du projet).
+  // popover/modal et au rechargement de la page (persiste avec le reste du projet).
   accentColor?: string;
+  darkColor?: string;
   onAccentColorChange: (hex: string | undefined) => void;
+  onDarkColorChange: (hex: string | undefined) => void;
   onDelete: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -46,7 +85,7 @@ export function PageResultCard({
       const res = await apiFetch(`/api/v1/documents/${documentId}/render`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ template, format, title, accent_color: accentColor }),
+        body: JSON.stringify({ template, format, title, accent_color: accentColor, dark_color: darkColor }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail ?? "Téléchargement impossible.");
       const data = await res.json();
@@ -57,6 +96,13 @@ export function PageResultCard({
       setDownloading(false);
     }
   }
+
+  const colorPickers = (
+    <>
+      <ColorSwatchRow label="Couleur d'accent" value={accentColor} onChange={onAccentColorChange} />
+      <ColorSwatchRow label="Couleur secondaire" value={darkColor} onChange={onDarkColorChange} />
+    </>
+  );
 
   return (
     <>
@@ -71,7 +117,12 @@ export function PageResultCard({
           className="group relative aspect-[210/297] w-full overflow-hidden rounded-[10px] border bg-white text-left shadow-sm transition-shadow hover:shadow-md"
         >
           <div className="pointer-events-none absolute inset-0 overflow-hidden p-4">
-            <DocumentRenderer blocks={blocks} template={template} accentColorOverride={accentColor} />
+            <DocumentRenderer
+              blocks={blocks}
+              template={template}
+              accentColorOverride={accentColor}
+              darkColorOverride={darkColor}
+            />
           </div>
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-white to-transparent" />
           <div className="absolute inset-0 hidden items-center justify-center bg-black/5 group-hover:flex">
@@ -84,6 +135,22 @@ export function PageResultCard({
         <div className="flex items-center justify-between gap-2">
           <p className="truncate text-xs font-medium text-muted-foreground">{title}</p>
           <div className="flex shrink-0 items-center gap-1">
+            <Popover>
+              <PopoverTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Couleurs"
+                    title="Couleurs"
+                    className="text-muted-foreground"
+                  />
+                }
+              >
+                <Palette className="size-3.5" />
+              </PopoverTrigger>
+              <PopoverContent align="end">{colorPickers}</PopoverContent>
+            </Popover>
             <Button
               variant="ghost"
               size="icon-sm"
@@ -120,27 +187,15 @@ export function PageResultCard({
         <DialogContent className="flex max-h-[85vh] w-full max-w-4xl flex-col gap-0 p-0 sm:max-w-4xl">
           <DialogTitle className="shrink-0 px-4 pt-4">{title}</DialogTitle>
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
-            <DocumentRenderer blocks={blocks} template={template} accentColorOverride={accentColor} />
+            <DocumentRenderer
+              blocks={blocks}
+              template={template}
+              accentColorOverride={accentColor}
+              darkColorOverride={darkColor}
+            />
           </div>
           <div className="flex shrink-0 flex-col gap-3 border-t p-4">
-            <div className="flex items-center gap-1.5">
-              {ACCENT_PALETTE.map((c) => (
-                <button
-                  key={c.hex}
-                  type="button"
-                  onClick={() => onAccentColorChange(accentColor === c.hex ? undefined : c.hex)}
-                  aria-label={`Couleur ${c.label}`}
-                  title={c.label}
-                  className={cn(
-                    "flex size-6 items-center justify-center rounded-full ring-offset-2 transition-shadow",
-                    accentColor === c.hex && "ring-2 ring-foreground",
-                  )}
-                  style={{ backgroundColor: `#${c.hex}` }}
-                >
-                  {accentColor === c.hex && <Check className="size-3.5 text-white" />}
-                </button>
-              ))}
-            </div>
+            <div className="flex flex-wrap items-start gap-4">{colorPickers}</div>
             <div className="flex items-center gap-3">
               <FormatSelector value={format} onChange={setFormat} />
               <Button onClick={handleDownload} disabled={downloading || !documentId}>

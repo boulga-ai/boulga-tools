@@ -93,8 +93,9 @@ export type ResultItem = {
   blocks: DocBlock[];
   template: string;
   // Palette curatee (lib/accent-palette.ts) — undefined = couleur par defaut du
-  // template. Hex sans "#", meme convention que RenderRequest.accent_color.
+  // template. Hex sans "#", meme convention que RenderRequest.accent_color/dark_color.
   accentColor?: string;
+  darkColor?: string;
 };
 
 // Un projet archive (voir DocumentWorkspace.handleNewDocument/openProject) : instantane

@@ -349,17 +349,25 @@ export function DocumentRenderer({
   template,
   className,
   accentColorOverride,
+  darkColorOverride,
 }: {
   blocks: DocBlock[];
   template?: string;
   className?: string;
-  // Couleur d'accent choisie par le user (palette curatee, voir lib/accent-palette.ts)
-  // — sans "#", remplace style.accentHex partout, jamais darkHex (voir backend
-  // renderer.render(accent_override), meme regle).
+  // Couleurs choisies par le user (palette curatee, voir lib/accent-palette.ts) —
+  // sans "#". accentColorOverride remplace accentHex, darkColorOverride remplace
+  // darkHex (nom/elements secondaires, et fond des templates a sidebar/bandeau) —
+  // jamais le fond blanc de la carte elle-meme. Meme regle que backend
+  // renderer.render(accent_override, dark_override).
   accentColorOverride?: string;
+  darkColorOverride?: string;
 }) {
   const baseStyle = getTemplateStyle(template);
-  const style = accentColorOverride ? { ...baseStyle, accentHex: `#${accentColorOverride}` } : baseStyle;
+  const style = {
+    ...baseStyle,
+    accentHex: accentColorOverride ? `#${accentColorOverride}` : baseStyle.accentHex,
+    darkHex: darkColorOverride ? `#${darkColorOverride}` : baseStyle.darkHex,
+  };
   // "contact" n'existe que dans le vocabulaire de blocs du CV (voir backend
   // DOCUMENT_SCHEMAS) — signal fiable pour choisir la mise en forme des titres
   // (majuscules, voir BlockView) sans avoir a faire remonter le doc_type ici.
