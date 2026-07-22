@@ -2,7 +2,7 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Eye, Square, Wand2, Download, Plus, X, Loader2, Pencil } from "lucide-react";
+import { Eye, Square, Wand2, Download, Plus, X, Loader2, Pencil, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { AIInteraction } from "@/components/tools/AIInteraction";
 import { ChatInput } from "@/components/tools/ChatInput";
 import { MarkdownContent } from "@/components/tools/MarkdownContent";
@@ -152,6 +152,7 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   const [attaching, setAttaching] = useState(false);
   const [results, setResults] = useSessionResults<ResultItem>(`${storageKey}:results`);
   const hasGenerated = multiResult ? results.length > 0 : !!documentId;
+  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const resultsEndRef = useRef<HTMLDivElement>(null);
   // En dessous de lg, un split horizontal redimensionnable n'a pas de sens
@@ -579,28 +580,34 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
         </div>
       )}
 
-      {results.map((item) => (
-        <PageResultCard
-          key={item.id}
-          documentId={item.documentId}
-          title={item.title}
-          blocks={item.blocks}
-          template={item.template}
-          onDelete={() => setResults((prev) => prev.filter((r) => r.id !== item.id))}
-        />
-      ))}
-
-      {isStreaming && (
-        <div className="flex w-full max-w-[380px] flex-col gap-1.5">
-          <div className="relative aspect-[210/297] w-full overflow-hidden rounded-[10px] border bg-white p-4 shadow-sm">
-            <DocumentRenderer blocks={blocks} template={template} />
+      {/* max-w ici (pas sur la carte elle-meme) : garde une taille de page realiste
+          meme si le panel est tres large, tout en restant pleinement redimensionnable
+          en dessous de ce plafond genereux. */}
+      <div className="flex flex-col gap-4">
+        {results.map((item) => (
+          <div key={item.id} className="w-full max-w-[800px]">
+            <PageResultCard
+              documentId={item.documentId}
+              title={item.title}
+              blocks={item.blocks}
+              template={item.template}
+              onDelete={() => setResults((prev) => prev.filter((r) => r.id !== item.id))}
+            />
           </div>
-          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Loader2 className="size-3 animate-spin" />
-            Génération en cours...
-          </p>
-        </div>
-      )}
+        ))}
+
+        {isStreaming && (
+          <div className="flex w-full max-w-[800px] flex-col gap-1.5">
+            <div className="relative aspect-[210/297] w-full overflow-hidden rounded-[10px] border bg-white p-4 shadow-sm">
+              <DocumentRenderer blocks={blocks} template={template} />
+            </div>
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="size-3 animate-spin" />
+              Génération en cours...
+            </p>
+          </div>
+        )}
+      </div>
       <div ref={resultsEndRef} />
 
       {error && <GenerationError message={error} isQuotaError={isQuotaError} onRetry={() => handleGenerate()} />}
@@ -766,15 +773,37 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
     );
   }
 
+  // Masquer le formulaire/chat pour ne garder que les documents generes — meme
+  // logique que masquer la sidebar principale de l'appli.
+  const collapseToggle = (
+    <button
+      type="button"
+      onClick={() => setLeftPanelCollapsed((v) => !v)}
+      title={leftPanelCollapsed ? "Afficher le formulaire" : "Masquer le formulaire"}
+      className="flex size-7 shrink-0 items-center justify-center rounded-[8px] text-muted-foreground hover:bg-accent hover:text-foreground"
+    >
+      {leftPanelCollapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
+    </button>
+  );
+
   return (
-    <ResizablePanelGroup orientation="horizontal" className="h-full min-h-0">
-      <ResizablePanel defaultSize={58} minSize={35} maxSize={75} className="overflow-y-auto">
-        <div className="pr-4">{leftPanel}</div>
-      </ResizablePanel>
-      <ResizableHandle withHandle />
-      <ResizablePanel defaultSize={42} minSize={25} maxSize={65} className="overflow-y-auto">
-        <div className="pl-4">{rightPanel}</div>
-      </ResizablePanel>
-    </ResizablePanelGroup>
+    <div className="flex h-full min-h-0 flex-col gap-1">
+      <div className="flex items-center">{collapseToggle}</div>
+      <div className="min-h-0 flex-1">
+        {leftPanelCollapsed ? (
+          <div className="h-full overflow-y-auto">{rightPanel}</div>
+        ) : (
+          <ResizablePanelGroup orientation="horizontal" className="h-full min-h-0">
+            <ResizablePanel defaultSize={58} minSize={35} maxSize={75} className="overflow-y-auto">
+              <div className="pr-4">{leftPanel}</div>
+            </ResizablePanel>
+            <ResizableHandle withHandle />
+            <ResizablePanel defaultSize={42} minSize={25} maxSize={65} className="overflow-y-auto">
+              <div className="pl-4">{rightPanel}</div>
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        )}
+      </div>
+    </div>
   );
 });
