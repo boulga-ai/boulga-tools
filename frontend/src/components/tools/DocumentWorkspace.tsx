@@ -5,8 +5,6 @@ import { toast } from "sonner";
 import {
   Eye,
   Square,
-  Wand2,
-  Download,
   Plus,
   X,
   Loader2,
@@ -24,7 +22,6 @@ import { DocumentRenderer } from "@/components/tools/DocumentRenderer";
 import { GenerationError } from "@/components/tools/GenerationError";
 import { PageResultCard } from "@/components/tools/PageResultCard";
 import { TemplateSelector, type TemplateOption } from "@/components/tools/TemplateSelector";
-import { FormatSelector } from "@/components/tools/FormatSelector";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -162,16 +159,15 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   // pro_doc/academic : le template reste un habillage pur (jamais de contrat de
   // contenu, contrairement a templateConditionsContent) mais doit quand meme se
   // choisir AVANT generation, comme cv/cover_letter — uniquement pour deplacer le
-  // selecteur dans leftPanel plutot que resultPanel. Ne declenche jamais
-  // l'invalidation du document existant (voir l'effet cible sur templateConditionsContent
-  // seul, plus bas) : changer de skin pur ne perime jamais un document deja genere.
+  // selecteur en haut du panneau de gauche. Ne declenche jamais l'invalidation du
+  // document existant (voir l'effet cible sur templateConditionsContent seul, plus
+  // bas) : changer de skin pur ne perime jamais un document deja genere.
   templateUpfront?: boolean;
-  // cv/cover_letter : plusieurs documents generes coexistent dans le meme projet
-  // (fil de cartes, comme Reseaux sociaux/Convertisseur) au lieu d'un document
-  // unique ecrase a chaque generation. newDocumentLabel affiche un bouton qui vide
-  // le contexte de travail (cadrage/historique/infos validees) pour changer de
-  // sujet SANS perdre les documents deja generes — eux persistent independamment.
-  multiResult?: boolean;
+  // Plusieurs documents generes coexistent dans le meme projet (fil de cartes,
+  // comme Reseaux sociaux/Convertisseur) au lieu d'un document unique ecrase a
+  // chaque generation. newDocumentLabel affiche un bouton qui vide le contexte de
+  // travail (cadrage/historique/infos validees) pour changer de sujet SANS perdre
+  // les documents deja generes — eux persistent independamment.
   newDocumentLabel?: string;
   // pro_doc/academic uniquement — voir le type ProjectsControl ci-dessus.
   projectsControl?: ProjectsControl;
@@ -189,7 +185,6 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   disableLocalStorage,
   templateConditionsContent = false,
   templateUpfront = false,
-  multiResult = false,
   newDocumentLabel,
   projectsControl,
 }, ref) {
@@ -202,12 +197,8 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   const [chatTurns, setChatTurns] = useState<ChatTurn[]>(restored.chatTurns ?? []);
   const [validatedInfo, setValidatedInfo] = useState<Record<string, string>>(restored.validatedInfo ?? {});
   const [plan, setPlan] = useState<PlanItem[] | null>(restored.plan ?? null);
-  const [documentId, setDocumentId] = useState<string | null>(restored.documentId ?? null);
-  const [docTitle, setDocTitle] = useState<string | null>(restored.title ?? null);
-  const [editingTitle, setEditingTitle] = useState(false);
-  const [titleDraft, setTitleDraft] = useState("");
 
-  // Projets nommes (multiResult uniquement) : "Nouveau CV"/"Nouvelle lettre" archive
+  // Projets nommes : "Nouveau CV"/"Nouvelle lettre" archive
   // le projet actif (jamais supprime) et en ouvre un nouveau vierge — voir
   // handleNewDocument/openProject. Le compteur ne redescend jamais, meme si des
   // projets sont rouverts/refermes, pour ne jamais reutiliser un nom par defaut.
@@ -216,9 +207,7 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   const [projectName, setProjectName] = useState<string>(() => restored.projectName ?? "Projet 1");
   const [editingProjectName, setEditingProjectName] = useState(false);
   const [projectNameDraft, setProjectNameDraft] = useState("");
-  const [archivedProjects, setArchivedProjects] = useState<ProjectSnapshot[]>(() =>
-    multiResult ? loadArchivedProjects(storageKey) : [],
-  );
+  const [archivedProjects, setArchivedProjects] = useState<ProjectSnapshot[]>(() => loadArchivedProjects(storageKey));
   const [historyOpen, setHistoryOpen] = useState(false);
 
   const [userText, setUserText] = useState("");
@@ -226,13 +215,11 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   const [analysis, setAnalysis] = useState<AnalyzeResponse | null>(null);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
 
-  const { blocks, isStreaming, error, isQuotaError, progress, start, stop, setBlocks } = useBlockStream();
+  const { blocks, isStreaming, error, isQuotaError, progress, start, stop } = useBlockStream();
   const [template, setTemplate] = useState(templates[0]?.value ?? "");
-  const [format, setFormat] = useState<"docx" | "pdf">("pdf");
-  const [downloading, setDownloading] = useState(false);
   const [attaching, setAttaching] = useState(false);
   const [results, setResults] = useState<ResultItem[]>(restored.results ?? []);
-  const hasGenerated = multiResult ? results.length > 0 : !!documentId;
+  const hasGenerated = results.length > 0;
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const resultsEndRef = useRef<HTMLDivElement>(null);
@@ -241,51 +228,12 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   const isDesktop = useMediaQuery("(min-width: 1024px)");
 
   useEffect(() => {
-    if (restored.blocks && restored.blocks.length > 0) setBlocks(restored.blocks);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Un changement de cadrage (type, domaine, competence, niveau de detail) alors
-  // qu'un document existe deja rend ce document perime — on vide le panneau plutot
-  // que de laisser un document qui ne correspond plus au cadrage affiche sans
-  // signal. Un simple enrichissement (userText, reponse a une question/suggestion)
-  // ne passe jamais par ici : seul un changement de cadrage le declenche.
-  const prevCadrageRef = useRef(cadrage);
-  useEffect(() => {
-    const prev = prevCadrageRef.current;
-    prevCadrageRef.current = cadrage;
-    if (prev === cadrage) return;
-    if (documentId && JSON.stringify(prev) !== JSON.stringify(cadrage)) {
-      setBlocks([]);
-      setDocumentId(null);
-      setDocTitle(null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cadrage]);
-
-  // Meme logique que ci-dessus, pour le template — mais seulement quand il conditionne
-  // le contenu (cv/cover_letter) : pour pro_doc/academic le template reste un habillage
-  // pur, le changer ne doit jamais invalider le document deja genere.
-  const prevTemplateRef = useRef(template);
-  useEffect(() => {
-    const prev = prevTemplateRef.current;
-    prevTemplateRef.current = template;
-    if (!templateConditionsContent || prev === template) return;
-    if (documentId) {
-      setBlocks([]);
-      setDocumentId(null);
-      setDocTitle(null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [template]);
-
-  useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [chatTurns, analyzing]);
 
   useEffect(() => {
-    if (multiResult) resultsEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [multiResult, results, isStreaming]);
+    resultsEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [results, isStreaming]);
 
   useImperativeHandle(ref, () => ({
     mergeCadrage: (partial) => setCadrage((prev) => ({ ...prev, ...partial })),
@@ -293,49 +241,32 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   }));
 
   useEffect(() => {
-    // En mode multiResult, blocks/documentId singuliers restent toujours vides (voir
-    // handleGenerate) — c'est le DERNIER resultat du fil qui fait foi pour les
-    // consommateurs externes de onStateChange (ex: "Importer depuis mon CV").
-    const latest = multiResult ? results[results.length - 1] : undefined;
-    const effectiveBlocks = multiResult ? (latest?.blocks ?? []) : blocks;
-    const effectiveDocId = multiResult ? (latest?.documentId ?? null) : documentId;
-    const effectiveTitle = multiResult ? (latest?.title ?? null) : docTitle;
+    // C'est le DERNIER resultat du fil qui fait foi pour les consommateurs externes
+    // de onStateChange (ex: "Importer depuis mon CV").
+    const latest = results[results.length - 1];
     const state: WorkState = {
       cadrage,
       history,
       chatTurns,
       validatedInfo,
       plan,
-      blocks: effectiveBlocks,
-      documentId: effectiveDocId,
-      title: effectiveTitle,
-      results: multiResult ? results : undefined,
-      projectId: multiResult ? projectId : undefined,
-      projectName: multiResult ? projectName : undefined,
+      blocks: latest?.blocks ?? [],
+      documentId: latest?.documentId ?? null,
+      title: latest?.title ?? null,
+      results,
+      projectId,
+      projectName,
     };
     if (!disableLocalStorage) saveState(storageKey, state);
     onStateChange?.(state);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    cadrage,
-    history,
-    chatTurns,
-    validatedInfo,
-    plan,
-    blocks,
-    documentId,
-    docTitle,
-    results,
-    multiResult,
-    projectId,
-    projectName,
-  ]);
+  }, [cadrage, history, chatTurns, validatedInfo, plan, results, projectId, projectName]);
 
   // Historique des projets : persiste independamment du WorkState du projet actif
   // (cle localStorage separee, voir loadArchivedProjects).
   useEffect(() => {
-    if (multiResult && !disableLocalStorage) saveArchivedProjects(storageKey, archivedProjects);
-  }, [multiResult, disableLocalStorage, storageKey, archivedProjects]);
+    if (!disableLocalStorage) saveArchivedProjects(storageKey, archivedProjects);
+  }, [disableLocalStorage, storageKey, archivedProjects]);
 
   function buildContext(extra?: Partial<DocEngineContext>): DocEngineContext {
     // "competence" et "depth" vivent dans le cadrage cote UI (memes selecteurs
@@ -443,28 +374,22 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
 
   async function handleGenerate(instruction?: string) {
     const genTemplate = template;
-    const isFirstResult = multiResult && results.length === 0;
-    if (!multiResult) setDocumentId(null);
+    const isFirstResult = results.length === 0;
 
     // Partage entre succes complet (done) et generation longue interrompue en
     // cours de route (partial, voir PartialGenerateEvent) : dans les deux cas un
     // document existe et merite sa carte — seul le message affiche differe.
     function applyResult(documentId: string | null, title: string, blocks: DocBlock[]) {
-      if (multiResult) {
-        setResults((prev) => [
-          ...prev,
-          { id: crypto.randomUUID(), documentId, title, blocks, template: genTemplate },
-        ]);
-        // Nomme le projet a partir du contexte (poste vise) ou, a defaut, du titre
-        // genere — mais seulement pour son tout premier document et seulement si le
-        // user n'a pas deja renomme le projet (le nom par defaut reste "Projet N").
-        if (isFirstResult && DEFAULT_PROJECT_NAME_RE.test(projectName)) {
-          const autoName = cadrage.target_role?.trim() || title;
-          if (autoName) setProjectName(autoName);
-        }
-      } else {
-        setDocumentId(documentId);
-        setDocTitle(title);
+      setResults((prev) => [
+        ...prev,
+        { id: crypto.randomUUID(), documentId, title, blocks, template: genTemplate },
+      ]);
+      // Nomme le projet a partir du contexte (poste vise) ou, a defaut, du titre
+      // genere — mais seulement pour son tout premier document et seulement si le
+      // user n'a pas deja renomme le projet (le nom par defaut reste "Projet N").
+      if (isFirstResult && DEFAULT_PROJECT_NAME_RE.test(projectName)) {
+        const autoName = cadrage.target_role?.trim() || title;
+        if (autoName) setProjectName(autoName);
       }
     }
 
@@ -577,25 +502,6 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
     }
   }
 
-  async function handleDownload() {
-    if (!documentId) return;
-    setDownloading(true);
-    try {
-      const res = await apiFetch(`/api/v1/documents/${documentId}/render`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ template, format, title: docTitle || undefined }),
-      });
-      if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail ?? "Téléchargement impossible.");
-      const data = await res.json();
-      window.open(data.url, "_blank");
-    } catch (err) {
-      toast.error("Téléchargement impossible", { description: (err as Error).message });
-    } finally {
-      setDownloading(false);
-    }
-  }
-
   function turnBlocks(turn: Extract<ChatTurn, { role: "assistant" }>): InteractionBlock[] {
     const result: InteractionBlock[] = [];
     for (const s of turn.suggestions) {
@@ -688,84 +594,9 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
     </div>
   );
 
-  const resultPanel = (
-    <div className="flex flex-col gap-4">
-      {editingTitle ? (
-        <Input
-          autoFocus
-          value={titleDraft}
-          onChange={(e) => setTitleDraft(e.target.value)}
-          onBlur={() => {
-            setDocTitle(titleDraft.trim() || docTitle);
-            setEditingTitle(false);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-            if (e.key === "Escape") setEditingTitle(false);
-          }}
-          className="h-9 text-base font-semibold"
-        />
-      ) : docTitle ? (
-        <button
-          type="button"
-          onClick={() => {
-            setTitleDraft(docTitle);
-            setEditingTitle(true);
-          }}
-          className="group flex w-fit items-center gap-1.5 text-left"
-          title="Cliquer pour modifier le titre"
-        >
-          <h3>{docTitle}</h3>
-          <Pencil className="size-3.5 text-muted-foreground opacity-0 group-hover:opacity-100" />
-        </button>
-      ) : (
-        <h3>Résultat</h3>
-      )}
-      {isStreaming && (
-        <div className="flex flex-col gap-1.5">
-          {generationStatus}
-          {generationProgressBar}
-        </div>
-      )}
-      {!isStreaming && blocks.length === 0 ? (
-        <div className="flex min-h-40 items-center justify-center rounded-[12px] border border-dashed p-8 text-center text-sm text-muted-foreground">
-          Votre document apparaîtra ici.
-        </div>
-      ) : (
-        <DocumentRenderer blocks={blocks} template={template} />
-      )}
-      {error && <GenerationError message={error} isQuotaError={isQuotaError} onRetry={() => handleGenerate()} />}
-
-      {documentId && !isStreaming && (
-        <div className="flex flex-col gap-3 border-t pt-4">
-          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Wand2 className="size-3.5" />
-            Pour ajuster ce document (« Raccourcis le résumé »...), décrivez la modification dans le chat ci-contre.
-          </p>
-
-          {!templateConditionsContent && !templateUpfront && templates.length > 0 && (
-            <>
-              <Label>Modèle</Label>
-              <TemplateSelector options={templates} value={template} onChange={setTemplate} />
-            </>
-          )}
-          <div className="flex items-center gap-3">
-            <FormatSelector value={format} onChange={setFormat} />
-            <Button onClick={handleDownload} disabled={downloading}>
-              <Download className="size-4" />
-              {downloading ? "Préparation..." : "Télécharger"}
-            </Button>
-          </div>
-
-          {connections}
-        </div>
-      )}
-    </div>
-  );
-
-  // cv/cover_letter : fil de cartes (une par generation/ajustement), jamais ecrasees
-  // — chaque carte est une miniature format page (voir PageResultCard), le document
-  // complet ne se consulte qu'en agrandi.
+  // Fil de cartes (une par generation/ajustement), jamais ecrasees — chaque carte
+  // est une miniature format page (voir PageResultCard), le document complet ne se
+  // consulte qu'en agrandi.
   const resultFeed = (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
@@ -833,7 +664,7 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   const leftPanel = (
     <div className="flex flex-col gap-3">
       {beforeCadrage}
-      {multiResult && newDocumentLabel && (() => {
+      {newDocumentLabel && (() => {
         // projectsControl (pro_doc/academic) remplace uniquement la donnee et les
         // handlers par une source externe (sessions DB) — le rendu ci-dessous est
         // partage a l'identique par les deux modes.
@@ -1063,15 +894,13 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
     </div>
   );
 
-  const rightPanel = multiResult ? resultFeed : resultPanel;
-
   // Sous lg, un split horizontal redimensionnable n'a pas de sens (pas assez de
   // largeur) — empilement vertical simple.
   if (!isDesktop) {
     return (
       <div className="flex flex-col gap-6">
         {leftPanel}
-        {rightPanel}
+        {resultFeed}
       </div>
     );
   }
@@ -1094,7 +923,7 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
       <div className="flex items-center">{collapseToggle}</div>
       <div className="min-h-0 flex-1">
         {leftPanelCollapsed ? (
-          <div className="h-full overflow-y-auto">{rightPanel}</div>
+          <div className="h-full overflow-y-auto">{resultFeed}</div>
         ) : (
           // react-resizable-panels v4 : un nombre nu est interprete en PIXELS, pas en
           // pourcentage (ex: defaultSize={58} = 58px, pas 58%) — d'ou le "figé" qui
@@ -1106,7 +935,7 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
             </ResizablePanel>
             <ResizableHandle withHandle />
             <ResizablePanel defaultSize="42" minSize="25" maxSize="65" className="overflow-y-auto">
-              <div className="pl-4">{rightPanel}</div>
+              <div className="pl-4">{resultFeed}</div>
             </ResizablePanel>
           </ResizablePanelGroup>
         )}

@@ -61,7 +61,6 @@ export default function CVWriterPage() {
             docType="cv"
             storageKey="boulga:workspace:cv"
             templateConditionsContent
-            multiResult
             newDocumentLabel="Nouveau CV"
             cadrageFields={[
               { key: "full_name", label: "Nom complet" },

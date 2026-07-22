@@ -272,7 +272,6 @@ export default function AcademicWriterPage() {
             storageKey="boulga:workspace:academic"
             disableLocalStorage
             templateUpfront
-            multiResult
             newDocumentLabel="Nouveau document"
             projectsControl={
               session

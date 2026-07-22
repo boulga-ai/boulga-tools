@@ -155,7 +155,6 @@ export default function CoverLetterPage() {
             docType="cover_letter"
             storageKey="boulga:workspace:cover_letter"
             templateConditionsContent
-            multiResult
             newDocumentLabel="Nouvelle lettre"
             beforeCadrage={
               <div className="flex flex-col gap-3">

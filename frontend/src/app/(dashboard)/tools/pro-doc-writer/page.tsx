@@ -276,7 +276,6 @@ export default function ProDocWriterPage() {
             storageKey="boulga:workspace:pro_doc"
             disableLocalStorage
             templateUpfront
-            multiResult
             newDocumentLabel="Nouveau document"
             projectsControl={
               session
