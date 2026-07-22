@@ -6,6 +6,12 @@ import type { DocBlock, GenerateDoneEvent, PartialGenerateEvent } from "@/types/
 
 type ErrorEvent = { code: string; message: string };
 
+// Reponse HTTP initiale non-ok (402 quota, 403 modele indisponible, 500...) : le
+// serveur a repondu, juste avec un statut d'echec — distinct d'une vraie coupure
+// reseau (fetch qui echoue avant meme d'obtenir une reponse, ou connexion coupee en
+// plein milieu du flux). Seule la seconde justifie une tentative de reconnexion.
+class StructuredHttpError extends Error {}
+
 // Progression d'une generation segmentee (documents longs, academique/pro_doc — voir
 // documents_engine.py) : index/total de segment en cours. Reste null pour toute
 // generation non segmentee (cv/cover_letter, ou pro_doc/academic a plan court) —
@@ -17,6 +23,13 @@ export function useBlockStream() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isQuotaError, setIsQuotaError] = useState(false);
+  // Distingue une erreur RESEAU brute (connexion coupee, jamais d'evenement structure
+  // du serveur — voir le catch tout en bas) d'une erreur STRUCTUREE (evenement SSE
+  // "error" : le serveur a lui-meme conclu que rien n'etait recuperable, cf.
+  // documents_engine.py). Seule la premiere justifie une tentative de reconnexion
+  // automatique cote appelant (voir DocumentWorkspace.attemptReconnect) — retenter
+  // sur une erreur deja explicitement tranchee par le serveur n'aurait aucun sens.
+  const [isConnectionError, setIsConnectionError] = useState(false);
   const [progress, setProgress] = useState<StreamProgress | null>(null);
   // Connu des le tout debut du flux (evenement "started"), bien avant done/partial —
   // une generation longue (3-4 min) peut voir sa connexion coupee (reseau,
@@ -45,6 +58,7 @@ export function useBlockStream() {
     setBlocks([]);
     setError(null);
     setIsQuotaError(false);
+    setIsConnectionError(false);
     setProgress(null);
     setDocumentId(null);
     setTruncated(false);
@@ -70,7 +84,7 @@ export function useBlockStream() {
           // corps non-JSON : on garde le texte brut comme message
         }
         if (res.status === 402) setIsQuotaError(true);
-        throw new Error(message);
+        throw new StructuredHttpError(message);
       }
 
       const reader = res.body.getReader();
@@ -122,6 +136,7 @@ export function useBlockStream() {
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
         setError((err as Error).message || "Une erreur est survenue. Veuillez réessayer.");
+        if (!(err instanceof StructuredHttpError)) setIsConnectionError(true);
       }
     } finally {
       setIsStreaming(false);
@@ -133,5 +148,17 @@ export function useBlockStream() {
     controllerRef.current?.abort();
   }, []);
 
-  return { blocks, isStreaming, error, isQuotaError, progress, documentId, truncated, start, stop, setBlocks };
+  return {
+    blocks,
+    isStreaming,
+    error,
+    isQuotaError,
+    isConnectionError,
+    progress,
+    documentId,
+    truncated,
+    start,
+    stop,
+    setBlocks,
+  };
 }

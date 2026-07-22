@@ -218,10 +218,31 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   // documentId renomme en streamDocumentId ici : distinct du champ documentId de
   // chaque ResultItem (le resultat fini), celui-ci suit la generation EN COURS des
   // le tout debut du flux (voir handleRecover).
-  const { blocks, isStreaming, error, isQuotaError, progress, documentId: streamDocumentId, truncated, start, stop } = useBlockStream();
+  const {
+    blocks,
+    isStreaming,
+    error,
+    isQuotaError,
+    isConnectionError,
+    progress,
+    documentId: streamDocumentId,
+    truncated,
+    start,
+    stop,
+  } = useBlockStream();
   const [template, setTemplate] = useState(templates[0]?.value ?? "");
   const [attaching, setAttaching] = useState(false);
   const [recovering, setRecovering] = useState(false);
+  // Tentative de reconnexion automatique (voir l'effet plus bas) : le user ne voit
+  // jamais l'erreur "seche" tant que ces essais courent, seulement un indicateur de
+  // reconnexion — meme esprit qu'un fil de discussion qui reprend tout seul quand le
+  // reseau revient, plutot que d'exiger un clic manuel des la premiere coupure.
+  const [reconnecting, setReconnecting] = useState(false);
+  const reconnectingRef = useRef(false);
+  // Documente le dernier streamDocumentId deja pris en charge par une tentative de
+  // reconnexion — evite de relancer une 2e tentative en boucle sur le meme echec
+  // tant qu'aucune nouvelle generation (nouveau streamDocumentId) n'a demarre.
+  const reconnectHandledIdRef = useRef<string | null>(null);
   const [results, setResults] = useState<ResultItem[]>(restored.results ?? []);
   const hasGenerated = results.length > 0;
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
@@ -399,6 +420,12 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
     const genTemplate = template;
     const isFirstResult = results.length === 0;
 
+    // Annule une eventuelle reconnexion automatique encore en cours pour une
+    // generation PRECEDENTE (rare, mais sinon les deux pourraient toutes les deux
+    // ajouter un resultat au fil presque au meme moment).
+    reconnectingRef.current = false;
+    setReconnecting(false);
+
     await start(
       `/api/v1/documents/${docType}/generate`,
       { context: buildContext({ adjust_instruction: instruction }) },
@@ -450,6 +477,69 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
       setRecovering(false);
     }
   }
+
+  // Reconnexion automatique (comme un fil de discussion qui reprend tout seul quand
+  // le reseau revient) : des qu'une erreur de FLUX survient (jamais un evenement
+  // "partial" structure — celui-la reste gere par son propre toast) alors qu'un
+  // document_id est deja connu, on suppose une simple coupure et on sonde
+  // GET /documents/{id} plusieurs fois plutot que d'afficher tout de suite le bouton
+  // manuel. S'arrete des que le contenu se stabilise (2 sondages identiques de
+  // suite) ou apres ~1 minute d'essais infructueux — le bouton manuel
+  // ("Vérifier si le document existe déjà") reste alors la seule option.
+  async function attemptReconnect(docId: string, genTemplate: string, isFirstResult: boolean) {
+    reconnectingRef.current = true;
+    setReconnecting(true);
+    let lastCount = -1;
+    let stableStreak = 0;
+    const maxAttempts = 15;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, attempt === 1 ? 2000 : 4000));
+      if (!reconnectingRef.current) return; // composant demonte ou nouvelle generation lancee entre-temps
+
+      try {
+        const res = await apiFetch(`/api/v1/documents/${docId}`);
+        if (res.ok) {
+          const data = await res.json();
+          const recoveredBlocks: DocBlock[] = data.content_json?.blocks ?? [];
+          stableStreak = recoveredBlocks.length > 0 && recoveredBlocks.length === lastCount ? stableStreak + 1 : 0;
+          lastCount = recoveredBlocks.length;
+
+          if (stableStreak >= 2) {
+            applyResult(docId, data.title || "Document récupéré", recoveredBlocks, genTemplate, isFirstResult);
+            toast.success("Connexion rétablie", {
+              description: "Le document a été récupéré après une coupure — vérifiez qu'il est complet.",
+            });
+            reconnectingRef.current = false;
+            setReconnecting(false);
+            return;
+          }
+        }
+      } catch {
+        // Le sondage lui-meme a echoue (reseau toujours coupe) : on continue
+        // simplement les tentatives suivantes sans casser la boucle.
+      }
+    }
+
+    reconnectingRef.current = false;
+    setReconnecting(false);
+  }
+
+  useEffect(() => {
+    // isConnectionError seul (pas isQuotaError, pas une erreur structuree renvoyee
+    // par le serveur) : une coupure reseau brute est la seule situation ou retenter
+    // a un sens (voir useBlockStream.StructuredHttpError).
+    if (!isConnectionError || !streamDocumentId || reconnectHandledIdRef.current === streamDocumentId) return;
+    reconnectHandledIdRef.current = streamDocumentId;
+    attemptReconnect(streamDocumentId, template, results.length === 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConnectionError, streamDocumentId]);
+
+  useEffect(() => {
+    return () => {
+      reconnectingRef.current = false;
+    };
+  }, []);
 
   function snapshotProject(): ProjectSnapshot {
     return {
@@ -706,14 +796,21 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
       </div>
       <div ref={resultsEndRef} />
 
-      {error && (
-        <GenerationError
-          message={error}
-          isQuotaError={isQuotaError}
-          onRetry={() => handleGenerate()}
-          onRecover={streamDocumentId ? handleRecover : undefined}
-          recovering={recovering}
-        />
+      {reconnecting ? (
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Loader2 className="size-3 animate-spin" />
+          Connexion interrompue — nouvelle tentative de récupération...
+        </p>
+      ) : (
+        error && (
+          <GenerationError
+            message={error}
+            isQuotaError={isQuotaError}
+            onRetry={() => handleGenerate()}
+            onRecover={streamDocumentId ? handleRecover : undefined}
+            recovering={recovering}
+          />
+        )
       )}
       {hasGenerated && connections}
     </div>
