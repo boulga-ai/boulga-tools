@@ -16,12 +16,41 @@ from app.core.documents import list_documents as list_documents_core
 from app.core.quota import consume_download
 from app.dependencies import check_quota_dep, get_current_user
 from app.models.documents import RenderRequest
+from app.utils.filenames import safe_stem
 from app.utils.storage import create_signed_url, delete_file, upload_file
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 GENERATED_BUCKET = "generated"
 DOWNLOAD_URL_TTL = 15 * 60  # 15 min
+
+# cv/cover_letter : nom de fichier "cv_nom_prenom" / "lm_nom_prenom" quand le nom
+# existe dans les blocs — un nom generique (UUID de stockage) ne dit jamais rien au
+# user sur ce qu'il vient de telecharger. pro_doc/academic n'ont pas ce concept de
+# personne : leur titre (deja specifique, impose par la consigne LLM) suffit tel quel.
+_DOC_TYPE_FILE_PREFIX = {"cv": "cv", "cover_letter": "lm"}
+
+
+def _person_name(doc_type: str, blocks: list) -> str | None:
+    if doc_type == "cv":
+        for b in blocks:
+            if b.type == "contact" and getattr(b, "full_name", ""):
+                return b.full_name
+    elif doc_type == "cover_letter":
+        for b in blocks:
+            if b.type == "letter_header" and getattr(b, "sender_name", ""):
+                return b.sender_name
+    return None
+
+
+def _download_filename(doc_type: str, title: str, blocks: list) -> str:
+    prefix = _DOC_TYPE_FILE_PREFIX.get(doc_type)
+    if prefix is None:
+        return safe_stem(title) if title else doc_type
+    name = _person_name(doc_type, blocks)
+    if name:
+        return f"{prefix}_{safe_stem(name)}"
+    return f"{prefix}_{safe_stem(title)}" if title else prefix
 
 
 @router.get("")
@@ -56,7 +85,13 @@ async def download_document(document_id: str, user: dict = Depends(get_current_u
             detail="Ce document n'a pas encore été rendu — choisissez un modèle pour le télécharger.",
         )
 
-    url = create_signed_url(GENERATED_BUCKET, document["storage_path"], DOWNLOAD_URL_TTL)
+    doc_type = document["tool"]
+    engine_document = validate_document(doc_type, document.get("content_json") or {})
+    filename = _download_filename(doc_type, document.get("title") or "", engine_document.blocks)
+    ext = document.get("format") or "docx"
+    url = create_signed_url(
+        GENERATED_BUCKET, document["storage_path"], DOWNLOAD_URL_TTL, download_filename=f"{filename}.{ext}"
+    )
     return {"url": url}
 
 
@@ -110,7 +145,10 @@ async def render_document(
     except Exception:
         pass  # le fichier est deja rendu et enregistre ; ne pas casser la reponse sur un souci de quota
 
-    url = create_signed_url(GENERATED_BUCKET, storage_path, DOWNLOAD_URL_TTL)
+    filename = _download_filename(doc_type, updated["title"] or "", engine_document.blocks)
+    url = create_signed_url(
+        GENERATED_BUCKET, storage_path, DOWNLOAD_URL_TTL, download_filename=f"{filename}.{body.format}"
+    )
     return {
         "id": updated["id"],
         "title": updated["title"],

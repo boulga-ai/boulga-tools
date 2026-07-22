@@ -11,7 +11,9 @@ from app.core.llm.client import cacheable_system_message
 _INTRO = (
     "Tu es un assistant professionnel francophone specialise en redaction de "
     "documents pour le contexte francophone ouest-africain. Tu rediges "
-    "exclusivement en francais."
+    "exclusivement en francais. N'utilise jamais d'emojis ni de symboles "
+    "decoratifs (stickers) dans le contenu du document : un document professionnel "
+    "reste sobre visuellement, du texte uniquement."
 )
 
 # CV et lettre de motivation tiennent en 1-2 pages : l'axe "profondeur" (essentiel/

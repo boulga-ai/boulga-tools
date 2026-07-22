@@ -98,6 +98,15 @@ def new_document(font_name: str) -> Document:
     normal.font.name = font_name
     normal.font.size = Pt(10.5)
     normal.font.color.rgb = GRIS_TEXTE
+    # Le gabarit par defaut de python-docx donne au style Normal un espacement apres
+    # paragraphe d'environ 8pt (herite du docx par defaut de la bibliotheque) — sans
+    # l'annuler ici, CHAQUE paragraphe (chaque puce, chaque ligne de meta-info...)
+    # traine cet espace en plus, ce qui donne un rendu beaucoup trop aere entre des
+    # lignes censees rester proches (ex: puces d'une meme experience). Les espacements
+    # volontaires entre sections restent : ils sont fixes explicitement par bloc
+    # (space_before = Pt(6)/Pt(10) dans renderer.py), independamment de ce defaut.
+    normal.paragraph_format.space_before = Pt(0)
+    normal.paragraph_format.space_after = Pt(2)
     # Les styles Heading du gabarit par defaut de python-docx referencent la police de
     # theme ("+Headings") plutot que le style Normal — sans ceci, les titres resteraient
     # dans la police du theme (Calibri Light) meme apres avoir change Normal.

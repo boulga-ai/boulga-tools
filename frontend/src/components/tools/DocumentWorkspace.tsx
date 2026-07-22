@@ -130,7 +130,6 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
 
   const { blocks, isStreaming, error, isQuotaError, start, stop, setBlocks } = useBlockStream();
-  const [adjustInstruction, setAdjustInstruction] = useState("");
   const [template, setTemplate] = useState(templates[0]?.value ?? "");
   const [format, setFormat] = useState<"docx" | "pdf">("pdf");
   const [downloading, setDownloading] = useState(false);
@@ -307,7 +306,6 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
       (done) => {
         setDocumentId(done.document_id);
         setDocTitle(done.title);
-        if (instruction) setAdjustInstruction("");
       },
     );
   }
@@ -468,23 +466,10 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
 
       {documentId && !isStreaming && (
         <div className="flex flex-col gap-3 border-t pt-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <Input
-              value={adjustInstruction}
-              onChange={(e) => setAdjustInstruction(e.target.value)}
-              placeholder="Ajuster : « Raccourcis le résumé »..."
-              className="max-w-sm text-sm"
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleGenerate(adjustInstruction)}
-              disabled={!adjustInstruction.trim() || isStreaming}
-            >
-              <Wand2 className="size-3.5" />
-              Ajuster
-            </Button>
-          </div>
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Wand2 className="size-3.5" />
+            Pour ajuster ce document (« Raccourcis le résumé »...), décrivez la modification dans le chat ci-contre.
+          </p>
 
           {!templateConditionsContent && templates.length > 0 && (
             <>
@@ -616,15 +601,27 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
 
       {/* Composeur façon chat (ChatInput partagé — meme composant que Chat IA/Email/
           Discours) : texte libre ou pièce jointe (PDF/DOCX/TXT), extraite puis ajoutée
-          au brouillon avant envoi. */}
-      <p className="text-xs text-muted-foreground">{textareaLabel}</p>
+          au brouillon avant envoi. Une fois un document genere, envoyer un message
+          ici regenere directement avec ce texte comme instruction d'ajustement —
+          plus besoin d'un champ separe pour "corriger" le document. */}
+      <p className="text-xs text-muted-foreground">
+        {documentId ? "Décrivez la modification à apporter au document généré." : textareaLabel}
+      </p>
       <ChatInput
         value={userText}
         onValueChange={setUserText}
-        onSend={() => handleAnalyze(false)}
-        disabled={analyzing}
+        onSend={() => {
+          if (documentId) {
+            const instruction = userText.trim();
+            setUserText("");
+            handleGenerate(instruction);
+          } else {
+            handleAnalyze(false);
+          }
+        }}
+        disabled={analyzing || isStreaming}
         clearOnSend={false}
-        placeholder={textareaPlaceholder}
+        placeholder={documentId ? "Ex : « Raccourcis le résumé », « Ajoute un stage »..." : textareaPlaceholder}
         onAttachFile={handleAttachFile}
         attaching={attaching}
       />

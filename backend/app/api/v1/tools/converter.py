@@ -1,4 +1,3 @@
-import re
 import tempfile
 from pathlib import Path
 from typing import Literal
@@ -17,20 +16,13 @@ from app.core.file_converter.converter import (
     validate_upload,
 )
 from app.dependencies import get_current_user
+from app.utils.filenames import safe_filename_stem as _safe_stem
 from app.utils.storage import create_signed_url, upload_file
 
 router = APIRouter(prefix="/tools/converter", tags=["converter"])
 
 TEMP_BUCKET = "temp"
 SIGNED_URL_TTL = 24 * 60 * 60  # 24h
-
-
-def _safe_stem(filename: str) -> str:
-    """Nom de fichier d'origine, assaini pour servir de nom de sortie par defaut
-    (au lieu du "input.pdf" generique precedent, qui faisait perdre le nom reel)."""
-    stem = Path(filename).stem
-    stem = re.sub(r"[^\w \-]", "_", stem, flags=re.UNICODE).strip()
-    return stem or "document"
 
 
 async def _read_and_validate(file: UploadFile) -> tuple[bytes, str]:
