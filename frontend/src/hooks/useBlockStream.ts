@@ -6,17 +6,25 @@ import type { DocBlock, GenerateDoneEvent } from "@/types/document-engine";
 
 type ErrorEvent = { code: string; message: string };
 
+// Progression d'une generation segmentee (documents longs, academique/pro_doc — voir
+// documents_engine.py) : index/total de segment en cours. Reste null pour toute
+// generation non segmentee (cv/cover_letter, ou pro_doc/academic a plan court) —
+// c'est ce null qui distingue "pas de progression a afficher" de "segment 1/1".
+export type StreamProgress = { index: number; total: number };
+
 export function useBlockStream() {
   const [blocks, setBlocks] = useState<DocBlock[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isQuotaError, setIsQuotaError] = useState(false);
+  const [progress, setProgress] = useState<StreamProgress | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
 
   const start = useCallback(async (path: string, body: unknown, onDone?: (data: GenerateDoneEvent) => void) => {
     setBlocks([]);
     setError(null);
     setIsQuotaError(false);
+    setProgress(null);
     setIsStreaming(true);
     const controller = new AbortController();
     controllerRef.current = controller;
@@ -72,6 +80,9 @@ export function useBlockStream() {
 
           if (eventType === "block") {
             setBlocks((prev) => [...prev, parsed as DocBlock]);
+          } else if (eventType === "segment_start" || eventType === "segment_done") {
+            const p = parsed as unknown as StreamProgress;
+            setProgress({ index: p.index, total: p.total });
           } else if (eventType === "done") {
             onDone?.(parsed as unknown as GenerateDoneEvent);
           } else if (eventType === "error") {
@@ -94,5 +105,5 @@ export function useBlockStream() {
     controllerRef.current?.abort();
   }, []);
 
-  return { blocks, isStreaming, error, isQuotaError, start, stop, setBlocks };
+  return { blocks, isStreaming, error, isQuotaError, progress, start, stop, setBlocks };
 }

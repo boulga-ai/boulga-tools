@@ -122,10 +122,10 @@ def build_generate_system_prompt(doc_type: str, depth: str = "detaille", templat
 
 
 def build_segment_system_prompt(doc_type: str, depth: str = "detaille") -> str:
-    """Variante du prompt de generation pour les documents academiques longs,
-    rediges par segments successifs (voir documents_engine.py) plutot qu'en un seul
-    appel — pour eviter la troncature, le timeout, et le cout excessif d'un document
-    de 40+ pages genere d'un coup."""
+    """Variante du prompt de generation pour les documents longs (academique ou
+    pro_doc), rediges par segments successifs (voir documents_engine.py) plutot
+    qu'en un seul appel — pour eviter la troncature, le timeout, et le cout excessif
+    d'un document de 40+ pages genere d'un coup."""
     schema = effective_schema(doc_type)
     return (
         f"{_INTRO}\n\n"
@@ -204,11 +204,11 @@ def build_messages(context: dict, mode: str) -> list[dict]:
     travail (cadrage, informations validees, plan) est injecte en tete de
     conversation pour que le LLM ne le reconstruise pas depuis l'historique brut ;
     l'historique lui-meme est renvoye tel quel — aucun resume/compaction ici. Pour
-    les documents academiques longs, la generation passe par un mecanisme distinct
-    et reellement implemente (build_segment_messages ci-dessus, appele depuis
-    documents_engine.py quand le plan depasse settings.ACADEMIC_SEGMENT_THRESHOLD
-    sections) : plusieurs appels successifs, chacun recevant un resume compact des
-    segments deja rediges."""
+    les documents longs (academique ou pro_doc), la generation passe par un
+    mecanisme distinct et reellement implemente (build_segment_messages ci-dessus,
+    appele depuis documents_engine.py quand le plan depasse
+    settings.LONG_DOC_SEGMENT_THRESHOLD sections) : plusieurs appels successifs,
+    chacun recevant un resume compact des segments deja rediges."""
     doc_type = context["doc_type"]
     depth = context.get("depth") or "detaille"
     template = context.get("template")

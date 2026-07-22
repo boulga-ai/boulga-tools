@@ -26,11 +26,12 @@ class Settings(BaseSettings):
     # Matrice LLM (JSON, surchargeable sans redeploiement)
     LLM_ROUTING_JSON: str = ""
 
-    # Generation academique segmentee (documents longs — memoire, these) : au-dela de
-    # ce nombre de sections dans le plan, /documents/academic/generate decoupe la
-    # generation en plusieurs appels LLM successifs plutot qu'un seul appel monolithique.
-    ACADEMIC_SEGMENT_THRESHOLD: int = 6
-    ACADEMIC_SEGMENT_SIZE: int = 2
+    # Generation segmentee des documents longs (memoire/these academiques, business
+    # plan/rapport pro_doc) : au-dela de ce nombre de sections dans le plan,
+    # /documents/{doc_type}/generate decoupe la generation en plusieurs appels LLM
+    # successifs plutot qu'un seul appel monolithique (voir documents_engine.py).
+    LONG_DOC_SEGMENT_THRESHOLD: int = 6
+    LONG_DOC_SEGMENT_SIZE: int = 2
 
     # LibreOffice headless (conversion docx/office <-> pdf). "soffice" suffit quand le
     # binaire est sur le PATH (cas du conteneur Docker, qui l'installe via apt) ; sinon

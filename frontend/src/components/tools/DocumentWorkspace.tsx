@@ -225,7 +225,7 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   const [analysis, setAnalysis] = useState<AnalyzeResponse | null>(null);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
 
-  const { blocks, isStreaming, error, isQuotaError, start, stop, setBlocks } = useBlockStream();
+  const { blocks, isStreaming, error, isQuotaError, progress, start, stop, setBlocks } = useBlockStream();
   const [template, setTemplate] = useState(templates[0]?.value ?? "");
   const [format, setFormat] = useState<"docx" | "pdf">("pdf");
   const [downloading, setDownloading] = useState(false);
@@ -652,6 +652,25 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
     </div>
   );
 
+  // progress reste null pour toute generation non segmentee (cv/cover_letter, ou
+  // pro_doc/academic a plan court) : le texte affiche ne change alors pas d'avant
+  // cette fonctionnalite. Segmente (documents longs), il indique la section en
+  // cours plutot qu'une attente silencieuse.
+  const generationStatus = isStreaming && (
+    <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <Loader2 className="size-3 animate-spin" />
+      {progress ? `Rédaction en cours — section ${progress.index}/${progress.total}` : "Génération en cours..."}
+    </p>
+  );
+  const generationProgressBar = isStreaming && progress && (
+    <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
+      <div
+        className="h-full rounded-full bg-bleu-boulga transition-all"
+        style={{ width: `${Math.min(100, Math.round((progress.index / progress.total) * 100))}%` }}
+      />
+    </div>
+  );
+
   const resultPanel = (
     <div className="flex flex-col gap-4">
       {editingTitle ? (
@@ -684,6 +703,12 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
         </button>
       ) : (
         <h3>Résultat</h3>
+      )}
+      {isStreaming && (
+        <div className="flex flex-col gap-1.5">
+          {generationStatus}
+          {generationProgressBar}
+        </div>
       )}
       {!isStreaming && blocks.length === 0 ? (
         <div className="flex min-h-40 items-center justify-center rounded-[12px] border border-dashed p-8 text-center text-sm text-muted-foreground">
@@ -776,10 +801,8 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
             <div className="relative aspect-[210/297] w-full overflow-hidden rounded-[10px] border bg-white p-4 shadow-sm">
               <DocumentRenderer blocks={blocks} template={template} />
             </div>
-            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Loader2 className="size-3 animate-spin" />
-              Génération en cours...
-            </p>
+            {generationStatus}
+            {generationProgressBar}
           </div>
         )}
       </div>

@@ -167,18 +167,19 @@ async def generate_document(
     document complet. Streame chaque bloc en SSE des qu'il est parsable (JSONL),
     puis persiste le JSON final (sans rendre de fichier — voir V3-5).
 
-    Pour l'academique avec un plan long (au-dela de settings.ACADEMIC_SEGMENT_THRESHOLD
-    sections), la generation est decoupee en plusieurs appels LLM successifs plutot
-    qu'un seul appel monolithique — invisible pour le user, qui voit toujours les
-    blocs arriver au fil de l'eau. Les 3 autres types de documents ne sont jamais
-    concernes (toujours courts)."""
+    Pour les documents longs (academique ou pro_doc) avec un plan long (au-dela de
+    settings.LONG_DOC_SEGMENT_THRESHOLD sections), la generation est decoupee en
+    plusieurs appels LLM successifs plutot qu'un seul appel monolithique — chaque
+    segment est annonce (segment_start) puis confirme (segment_done) en plus des
+    blocs eux-memes, pour que le user voie une vraie progression plutot qu'une
+    attente silencieuse. cv/cover_letter ne sont jamais concernes (toujours courts)."""
     _check_doc_type(doc_type)
     tier = user["tier"]
     model = _resolve_or_403(doc_type, tier, body.context.competence)
 
     context_dict = {**body.context.model_dump(), "doc_type": doc_type}
     plan = [p.model_dump() for p in body.context.plan] if body.context.plan else []
-    segmented = doc_type == "academic" and len(plan) > settings.ACADEMIC_SEGMENT_THRESHOLD
+    segmented = doc_type in ("academic", "pro_doc") and len(plan) > settings.LONG_DOC_SEGMENT_THRESHOLD
 
     async def event_stream():
         raw_blocks: list[dict] = []
@@ -187,7 +188,19 @@ async def generate_document(
         try:
             if segmented:
                 summaries: list[str] = []
-                for segment_sections in _chunk_plan(plan, settings.ACADEMIC_SEGMENT_SIZE):
+                segments = _chunk_plan(plan, settings.LONG_DOC_SEGMENT_SIZE)
+                total_segments = len(segments)
+                for i, segment_sections in enumerate(segments):
+                    yield {
+                        "event": "segment_start",
+                        "data": json.dumps(
+                            {
+                                "index": i + 1,
+                                "total": total_segments,
+                                "headings": [s.get("heading", "") for s in segment_sections],
+                            }
+                        ),
+                    }
                     segment_messages = build_segment_messages(context_dict, plan, segment_sections, summaries)
                     segment_blocks: list[dict] = []
                     segment_summary: str | None = None
@@ -202,6 +215,10 @@ async def generate_document(
                             total_usage["tokens_in"] += chunk["tokens_in"]
                             total_usage["tokens_out"] += chunk["tokens_out"]
                     summaries.append(segment_summary or _fallback_summary(segment_blocks))
+                    yield {
+                        "event": "segment_done",
+                        "data": json.dumps({"index": i + 1, "total": total_segments}),
+                    }
             else:
                 messages = build_messages(context_dict, "generate")
                 async for chunk in stream_blocks(model, messages):
