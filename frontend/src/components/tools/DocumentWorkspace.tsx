@@ -218,7 +218,7 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   // documentId renomme en streamDocumentId ici : distinct du champ documentId de
   // chaque ResultItem (le resultat fini), celui-ci suit la generation EN COURS des
   // le tout debut du flux (voir handleRecover).
-  const { blocks, isStreaming, error, isQuotaError, progress, documentId: streamDocumentId, start, stop } = useBlockStream();
+  const { blocks, isStreaming, error, isQuotaError, progress, documentId: streamDocumentId, truncated, start, stop } = useBlockStream();
   const [template, setTemplate] = useState(templates[0]?.value ?? "");
   const [attaching, setAttaching] = useState(false);
   const [recovering, setRecovering] = useState(false);
@@ -402,14 +402,22 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
     await start(
       `/api/v1/documents/${docType}/generate`,
       { context: buildContext({ adjust_instruction: instruction }) },
-      (done) => applyResult(done.document_id, done.title, done.blocks, genTemplate, isFirstResult),
+      (done) => {
+        if (done.truncated) {
+          toast.warning("Document possiblement incomplet", {
+            description: "Une section a été coupée par une limite de longueur du modèle — vérifiez le contenu avant de le télécharger.",
+          });
+        }
+        applyResult(done.document_id, done.title, done.blocks, genTemplate, isFirstResult);
+      },
       (partial) => {
         const segmentInfo =
           partial.completed_segments != null && partial.total_segments != null
             ? ` (section ${partial.completed_segments}/${partial.total_segments})`
             : "";
+        const truncNote = partial.truncated ? " Une section a aussi été coupée par une limite de longueur." : "";
         toast.warning("Génération interrompue", {
-          description: `Le document a été enregistré tel quel${segmentInfo} — vous pouvez le télécharger ou relancer une génération.`,
+          description: `Le document a été enregistré tel quel${segmentInfo} — vous pouvez le télécharger ou relancer une génération.${truncNote}`,
         });
         applyResult(partial.document_id, partial.title, partial.blocks, genTemplate, isFirstResult);
       },
@@ -613,10 +621,19 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   // cette fonctionnalite. Segmente (documents longs), il indique la section en
   // cours plutot qu'une attente silencieuse.
   const generationStatus = isStreaming && (
-    <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-      <Loader2 className="size-3 animate-spin" />
-      {progress ? `Rédaction en cours — section ${progress.index}/${progress.total}` : "Génération en cours..."}
-    </p>
+    <div className="flex flex-col gap-1">
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Loader2 className="size-3 animate-spin" />
+        {progress ? `Rédaction en cours — section ${progress.index}/${progress.total}` : "Génération en cours..."}
+      </p>
+      {/* Signale des la premiere section touchee, sans attendre la fin — une
+          section coupee par max_tokens n'est jamais rattrapee par les suivantes. */}
+      {truncated && (
+        <p className="text-xs text-attention">
+          Une section semble avoir été coupée par une limite de longueur du modèle.
+        </p>
+      )}
+    </div>
   );
   const generationProgressBar = isStreaming && progress && (
     <div className="h-1 w-full overflow-hidden rounded-full bg-muted">

@@ -46,7 +46,12 @@ class UsageChunk(TypedDict):
     tokens_out: int
 
 
-StreamChunk = DeltaChunk | UsageChunk
+class FinishChunk(TypedDict):
+    type: Literal["finish"]
+    reason: str | None  # "stop" (normal), "length" (tronque par max_tokens), etc.
+
+
+StreamChunk = DeltaChunk | UsageChunk | FinishChunk
 
 
 class OpenRouterError(Exception):
@@ -118,6 +123,9 @@ async def stream_completion(
                         text = choice.get("delta", {}).get("content")
                         if text:
                             yield {"type": "delta", "text": text}
+                        finish_reason = choice.get("finish_reason")
+                        if finish_reason:
+                            yield {"type": "finish", "reason": finish_reason}
     except httpx.HTTPError as exc:
         raise OpenRouterError(f"OpenRouter injoignable : {exc}") from exc
 
@@ -171,19 +179,22 @@ def cacheable_system_message(text: str) -> dict:
     }
 
 
-async def stream_blocks(model: str, messages: list[dict]) -> AsyncIterator[dict]:
+async def stream_blocks(model: str, messages: list[dict], max_tokens: int | None = None) -> AsyncIterator[dict]:
     """Streame une completion et isole chaque ligne JSON complete (JSONL/NDJSON) des
     qu'elle est parsable, pour un effet 'le document se construit sous les yeux' sans
     avoir a parser du JSON partiel caractere par caractere. Yield des chunks
     {'type': 'block', 'data': dict} au fil de l'eau, puis un chunk usage en fin de
-    flux. Une ligne qui n'est pas un bloc JSON valide est yield en
-    {'type': 'text_line', 'text': str} plutot que d'etre supprimee silencieusement —
-    utilise par la generation academique segmentee pour recuperer la ligne
-    'SUMMARY: ...' de fin de segment (voir documents_engine.py). Les appelants qui
-    n'utilisent que 'block'/'usage' ignorent naturellement ce type sans le traiter.
-    Une fence markdown ou une ligne vide reste ignoree. La reparation fine des blocs
-    vit dans document_engine.repair_block ; ce niveau-ci ne fait jamais planter le
-    flux."""
+    flux, et un chunk {'type': 'finish', 'reason': str} des que le modele signale la
+    fin de sa reponse — reason='length' signale une troncature par max_tokens
+    (silencieuse sinon : le modele s'arrete net, souvent en plein milieu d'un bloc
+    JSON, sans qu'aucune erreur ne soit jamais levee). Une ligne qui n'est pas un
+    bloc JSON valide est yield en {'type': 'text_line', 'text': str} plutot que
+    d'etre supprimee silencieusement — utilise par la generation academique
+    segmentee pour recuperer la ligne 'SUMMARY: ...' de fin de segment (voir
+    documents_engine.py). Les appelants qui n'utilisent que 'block'/'usage'
+    ignorent naturellement les autres types sans les traiter. Une fence markdown ou
+    une ligne vide reste ignoree. La reparation fine des blocs vit dans
+    document_engine.repair_block ; ce niveau-ci ne fait jamais planter le flux."""
     buffer = ""
 
     def _try_yield_line(line: str) -> dict | None:
@@ -198,7 +209,7 @@ async def stream_blocks(model: str, messages: list[dict]) -> AsyncIterator[dict]
             return {"type": "block", "data": data}
         return {"type": "text_line", "text": line}
 
-    async for chunk in stream_completion(model, messages, temperature=0.5):
+    async for chunk in stream_completion(model, messages, temperature=0.5, max_tokens=max_tokens):
         if chunk["type"] == "delta":
             buffer += chunk["text"]
             while "\n" in buffer:
@@ -207,6 +218,8 @@ async def stream_blocks(model: str, messages: list[dict]) -> AsyncIterator[dict]
                 if block_chunk is not None:
                     yield block_chunk
         elif chunk["type"] == "usage":
+            yield chunk
+        elif chunk["type"] == "finish":
             yield chunk
 
     block_chunk = _try_yield_line(buffer)

@@ -36,6 +36,17 @@ DOC_TYPE_TOOL: dict[str, str] = {
     "academic": "academic_writer",
 }
 
+# Plafond explicite plutot que de laisser le fournisseur appliquer sa propre limite
+# par defaut (souvent trop basse pour un contenu "tres detaille") — sans ca, un
+# depassement tronque la reponse en plein milieu d'un bloc JSON, sans la moindre
+# erreur : le bloc coupe est simplement ignore par repair_block, et le document
+# livre a l'air complet alors qu'il manque une partie de la section en cours.
+# Valeurs de depart raisonnables (a ajuster selon l'usage reel) : un segment
+# (2 sections, generation longue) vs un document complet en un seul appel
+# (cv/cover_letter, ou pro_doc/academic a plan court).
+_SEGMENT_MAX_TOKENS = 8_000
+_FULL_DOC_MAX_TOKENS = 16_000
+
 
 class PlanItem(BaseModel):
     heading: str
@@ -190,6 +201,10 @@ async def generate_document(
         persisted = False
         completed_segments = 0
         total_segments = 0
+        # finish_reason == "length" sur au moins un appel LLM : le modele a ete coupe
+        # par max_tokens, pas arrete de lui-meme — signale au frontend (segment_done/
+        # done/partial) plutot que de presenter un document tronque comme complet.
+        any_truncated = False
 
         def _persist(blocks: list[dict]) -> tuple[Document, str]:
             """Valide et sauvegarde l'etat courant du document — insert au tout
@@ -236,7 +251,8 @@ async def generate_document(
                     segment_messages = build_segment_messages(context_dict, plan, segment_sections, summaries)
                     segment_blocks: list[dict] = []
                     segment_summary: str | None = None
-                    async for chunk in stream_blocks(model, segment_messages):
+                    segment_truncated = False
+                    async for chunk in stream_blocks(model, segment_messages, max_tokens=_SEGMENT_MAX_TOKENS):
                         if chunk["type"] == "block":
                             segment_blocks.append(chunk["data"])
                             raw_blocks.append(chunk["data"])
@@ -246,24 +262,29 @@ async def generate_document(
                         elif chunk["type"] == "usage":
                             total_usage["tokens_in"] += chunk["tokens_in"]
                             total_usage["tokens_out"] += chunk["tokens_out"]
+                        elif chunk["type"] == "finish" and chunk["reason"] == "length":
+                            segment_truncated = True
                     summaries.append(segment_summary or _fallback_summary(segment_blocks))
                     completed_segments = i + 1
+                    any_truncated = any_truncated or segment_truncated
                     try:
                         _persist(raw_blocks)
                     except Exception:
                         pass  # retente au segment suivant ; ne casse jamais le flux pour un souci de sauvegarde
                     yield {
                         "event": "segment_done",
-                        "data": json.dumps({"index": i + 1, "total": total_segments}),
+                        "data": json.dumps({"index": i + 1, "total": total_segments, "truncated": segment_truncated}),
                     }
             else:
                 messages = build_messages(context_dict, "generate")
-                async for chunk in stream_blocks(model, messages):
+                async for chunk in stream_blocks(model, messages, max_tokens=_FULL_DOC_MAX_TOKENS):
                     if chunk["type"] == "block":
                         raw_blocks.append(chunk["data"])
                         yield {"event": "block", "data": json.dumps(chunk["data"])}
                     elif chunk["type"] == "usage":
                         total_usage = {"tokens_in": chunk["tokens_in"], "tokens_out": chunk["tokens_out"]}
+                    elif chunk["type"] == "finish" and chunk["reason"] == "length":
+                        any_truncated = True
         except OpenRouterError as exc:
             if raw_blocks:
                 # Une partie du document a deja ete generee (au moins un segment
@@ -281,6 +302,7 @@ async def generate_document(
                                 "blocks": [b.model_dump(mode="json") for b in document.blocks],
                                 "completed_segments": completed_segments if segmented else None,
                                 "total_segments": total_segments if segmented else None,
+                                "truncated": any_truncated,
                                 "message": str(exc),
                             }
                         ),
@@ -323,6 +345,7 @@ async def generate_document(
                     "document_id": document_id if persisted else None,
                     "title": title,
                     "blocks": [b.model_dump(mode="json") for b in document.blocks],
+                    "truncated": any_truncated,
                 }
             ),
         }

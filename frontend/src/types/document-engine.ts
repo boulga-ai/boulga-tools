@@ -119,6 +119,11 @@ export type GenerateDoneEvent = {
   document_id: string | null;
   title: string;
   blocks: DocBlock[];
+  // true si au moins un appel LLM (un segment, ou l'appel unique non segmente) a ete
+  // coupe par max_tokens (finish_reason="length") plutot que termine de lui-meme —
+  // le document livre peut alors avoir une section incomplete, sans qu'aucune erreur
+  // ne soit levee cote LLM (voir documents_engine.py/client.py).
+  truncated: boolean;
 };
 
 // Generation longue (academique/pro_doc segmentes) interrompue en cours de route
@@ -131,6 +136,7 @@ export type PartialGenerateEvent = {
   document_id: string | null;
   title: string;
   blocks: DocBlock[];
+  truncated: boolean;
   completed_segments: number | null;
   total_segments: number | null;
   message: string;

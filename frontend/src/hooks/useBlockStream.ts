@@ -25,6 +25,11 @@ export function useBlockStream() {
   // au frontend de recuperer le document par un simple GET plutot que de tout
   // reperdre et forcer une regeneration couteuse.
   const [documentId, setDocumentId] = useState<string | null>(null);
+  // true des qu'un segment_done signale finish_reason="length" (troncature par
+  // max_tokens) — ne redescend jamais a false en cours de flux, meme si un segment
+  // suivant se termine normalement (une seule section coupee suffit a rendre le
+  // document incomplet). Voir _SEGMENT_MAX_TOKENS/_FULL_DOC_MAX_TOKENS (documents_engine.py).
+  const [truncated, setTruncated] = useState(false);
   const controllerRef = useRef<AbortController | null>(null);
 
   const start = useCallback(async (
@@ -42,6 +47,7 @@ export function useBlockStream() {
     setIsQuotaError(false);
     setProgress(null);
     setDocumentId(null);
+    setTruncated(false);
     setIsStreaming(true);
     const controller = new AbortController();
     controllerRef.current = controller;
@@ -100,8 +106,9 @@ export function useBlockStream() {
           } else if (eventType === "block") {
             setBlocks((prev) => [...prev, parsed as DocBlock]);
           } else if (eventType === "segment_start" || eventType === "segment_done") {
-            const p = parsed as unknown as StreamProgress;
+            const p = parsed as unknown as StreamProgress & { truncated?: boolean };
             setProgress({ index: p.index, total: p.total });
+            if (p.truncated) setTruncated(true);
           } else if (eventType === "done") {
             onDone?.(parsed as unknown as GenerateDoneEvent);
           } else if (eventType === "partial") {
@@ -126,5 +133,5 @@ export function useBlockStream() {
     controllerRef.current?.abort();
   }, []);
 
-  return { blocks, isStreaming, error, isQuotaError, progress, documentId, start, stop, setBlocks };
+  return { blocks, isStreaming, error, isQuotaError, progress, documentId, truncated, start, stop, setBlocks };
 }
