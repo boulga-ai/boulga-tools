@@ -38,7 +38,7 @@ export type ChatQuestionState = AnalyzeQuestion & { answer?: string };
 export type ChatSuggestionState = AnalyzeSuggestion & { status: "pending" | "accepted" | "rejected" };
 
 export type ChatTurn =
-  | { id: string; role: "user"; content: string }
+  | { id: string; role: "user"; content: string; attachments?: { name: string }[] }
   | {
       id: string;
       role: "assistant";

@@ -4,6 +4,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "re
 import { toast } from "sonner";
 import {
   Eye,
+  FileText,
   Square,
   Plus,
   X,
@@ -242,6 +243,12 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   } = useBlockStream();
   const [template, setTemplate] = useState(templates[0]?.value ?? "");
   const [attaching, setAttaching] = useState(false);
+  // Fichiers joints en attente d'envoi (voir handleAttachFile) : jamais fusionnes
+  // dans userText — le texte extrait reste invisible cote humain, seul le nom
+  // s'affiche (carte retirable dans le composeur, puis carte dans la bulle envoyee,
+  // voir composeUserMessage/chatTurns). Ephemere comme userText/photoPreviewUrl :
+  // pas dans WorkState, perdu si on recharge la page avant d'envoyer.
+  const [attachments, setAttachments] = useState<{ id: string; name: string; text: string }[]>([]);
   // Purement cosmetique (URL signee, affichage seulement) — jamais envoyee au
   // backend ni persistee : seul cadrage.photo_path (le chemin Storage) doit
   // survivre. Un rechargement de page perd cette preview (le composant retombe sur
@@ -308,6 +315,17 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
     if (!disableLocalStorage) saveArchivedProjects(storageKey, archivedProjects);
   }, [disableLocalStorage, storageKey, archivedProjects]);
 
+  // Texte reellement transmis au LLM pour un message : le brouillon tape + le
+  // contenu extrait de chaque fichier joint, delimite par son nom. C'est la SEULE
+  // fonction qui recombine les deux — partout ailleurs (composeur, bulles de chat)
+  // ils restent separes, voir attachments plus haut.
+  function composeUserMessage(base: string): string {
+    const parts: string[] = [];
+    if (base.trim()) parts.push(base.trim());
+    for (const a of attachments) parts.push(`--- Fichier joint : ${a.name} ---\n${a.text}`);
+    return parts.join("\n\n");
+  }
+
   function buildContext(extra?: Partial<DocEngineContext>): DocEngineContext {
     // "competence"/"depth"/"photo_path" vivent dans le cadrage cote UI (memes
     // selecteurs compacts que type/domaine, meme persistance) mais sont des champs a
@@ -320,7 +338,7 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
       history,
       validated_info: validatedInfo,
       plan,
-      user_message: userText,
+      user_message: composeUserMessage(userText),
       request_plan: false,
       competence: (competence as DocEngineContext["competence"]) || undefined,
       depth: (depth as DocEngineContext["depth"]) || undefined,
@@ -344,14 +362,29 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
       setAnalysis(data);
       if (data.proposed_plan) setPlan(data.proposed_plan);
       const userTrimmed = userText.trim();
+      const hasAttachments = attachments.length > 0;
       setHistory((prev) => [
         ...prev,
-        ...(userTrimmed ? [{ role: "user" as const, content: userTrimmed }] : []),
+        // history est ce que le LLM revoit comme contexte aux tours suivants : le
+        // texte extrait doit y rester (composeUserMessage), contrairement a
+        // chatTurns ci-dessous qui est ce que l'humain voit.
+        ...(userTrimmed || hasAttachments
+          ? [{ role: "user" as const, content: composeUserMessage(userText) }]
+          : []),
         { role: "assistant" as const, content: data.message },
       ]);
       setChatTurns((prev) => [
         ...prev,
-        ...(userTrimmed ? [{ id: newTurnId(), role: "user" as const, content: userTrimmed }] : []),
+        ...(userTrimmed || hasAttachments
+          ? [
+              {
+                id: newTurnId(),
+                role: "user" as const,
+                content: userTrimmed,
+                attachments: hasAttachments ? attachments.map((a) => ({ name: a.name })) : undefined,
+              },
+            ]
+          : []),
         {
           id: newTurnId(),
           role: "assistant" as const,
@@ -361,6 +394,7 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
         },
       ]);
       setUserText("");
+      setAttachments([]);
     } catch (err) {
       setAnalyzeError((err as Error).message);
     } finally {
@@ -443,9 +477,20 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
     reconnectingRef.current = false;
     setReconnecting(false);
 
+    // Quand une instruction explicite est fournie (ajustement post-generation, voir
+    // le onSend du ChatInput plus bas), user_message doit rester limite aux pieces
+    // jointes : le texte tape est deja capture dans `instruction`, le laisser aussi
+    // dans user_message par defaut le dupliquerait dans le prompt (doc_engine.py
+    // l'ajoute une fois brut, une fois enveloppe dans "Instruction d'ajustement :
+    // ..."), sans rien apporter de plus au LLM.
+    const context =
+      instruction !== undefined
+        ? buildContext({ user_message: composeUserMessage(""), adjust_instruction: instruction })
+        : buildContext();
+
     await start(
       `/api/v1/documents/${docType}/generate`,
-      { context: buildContext({ adjust_instruction: instruction }) },
+      { context },
       (done) => {
         if (done.truncated) {
           toast.warning("Document possiblement incomplet", {
@@ -630,9 +675,12 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
     setHistoryOpen(false);
   }
 
-  // Extrait le texte d'un fichier joint (PDF/DOCX/TXT) et l'ajoute au brouillon en
-  // cours plutot que de l'envoyer directement : le user relit/complete avant d'envoyer,
-  // jamais de generation surprise a partir d'une extraction non verifiee.
+  // Extrait le texte d'un fichier joint (PDF/DOCX/TXT) et le garde a part, comme une
+  // piece jointe (voir attachments) — jamais fusionne dans le brouillon tape : le
+  // fichier reste une carte (nom seul, retirable) dans le composeur puis dans la
+  // bulle envoyee, exactement comme une piece jointe Claude. Le LLM recoit quand
+  // meme le texte complet a l'envoi (voir composeUserMessage), seul l'affichage
+  // humain change.
   async function handleAttachFile(file: File) {
     setAttaching(true);
     try {
@@ -641,13 +689,17 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
       const res = await apiFetch("/api/v1/documents/extract-text", { method: "POST", body: formData });
       if (!res.ok) throw new Error((await res.json().catch(() => null))?.detail ?? "Extraction impossible.");
       const data = await res.json();
-      setUserText((prev) => (prev.trim() ? `${prev}\n\n${data.text}` : data.text));
-      toast.success("Texte extrait — vérifiez et complétez avant d'envoyer.");
+      setAttachments((prev) => [...prev, { id: crypto.randomUUID(), name: file.name, text: data.text }]);
+      toast.success(`« ${file.name} » joint — l'IA en tiendra compte à l'envoi.`);
     } catch (err) {
       toast.error("Import du fichier impossible", { description: (err as Error).message });
     } finally {
       setAttaching(false);
     }
+  }
+
+  function removeAttachment(id: string) {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
   }
 
   function turnBlocks(turn: Extract<ChatTurn, { role: "assistant" }>): InteractionBlock[] {
@@ -1000,10 +1052,25 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
         )}
         {chatTurns.map((turn) =>
           turn.role === "user" ? (
-            <div key={turn.id} className="flex justify-end">
-              <div className="max-w-[85%] whitespace-pre-wrap rounded-[12px] rounded-tr-sm bg-bleu-boulga px-3 py-2 text-sm text-white">
-                {turn.content}
-              </div>
+            <div key={turn.id} className="flex flex-col items-end gap-1.5">
+              {turn.attachments && turn.attachments.length > 0 && (
+                <div className="flex flex-wrap justify-end gap-1.5">
+                  {turn.attachments.map((a, i) => (
+                    <span
+                      key={i}
+                      className="flex max-w-[220px] items-center gap-1.5 rounded-[8px] border bg-card px-2 py-1 text-xs"
+                    >
+                      <FileText className="size-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{a.name}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {turn.content && (
+                <div className="max-w-[85%] whitespace-pre-wrap rounded-[12px] rounded-tr-sm bg-bleu-boulga px-3 py-2 text-sm text-white">
+                  {turn.content}
+                </div>
+              )}
             </div>
           ) : (
             <div key={turn.id} className="flex flex-col gap-2">
@@ -1056,10 +1123,11 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
       </div>
 
       {/* Composeur façon chat (ChatInput partagé — meme composant que Chat IA/Email/
-          Discours) : texte libre ou pièce jointe (PDF/DOCX/TXT), extraite puis ajoutée
-          au brouillon avant envoi. Une fois un document genere, envoyer un message
-          ici regenere directement avec ce texte comme instruction d'ajustement —
-          plus besoin d'un champ separe pour "corriger" le document. */}
+          Discours) : texte libre et/ou pièce jointe (PDF/DOCX/TXT), affichee en carte
+          (jamais son texte extrait, voir attachments/handleAttachFile). Une fois un
+          document genere, envoyer un message ici regenere directement avec ce texte
+          comme instruction d'ajustement — plus besoin d'un champ separe pour
+          "corriger" le document. */}
       <p className="text-xs text-muted-foreground">
         {hasGenerated ? "Décrivez la modification à apporter au document généré." : textareaLabel}
       </p>
@@ -1070,6 +1138,7 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
           if (hasGenerated) {
             const instruction = userText.trim();
             setUserText("");
+            setAttachments([]);
             handleGenerate(instruction);
           } else {
             handleAnalyze(false);
@@ -1080,6 +1149,8 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
         placeholder={hasGenerated ? "Ex : « Raccourcis le résumé », « Ajoute un stage »..." : textareaPlaceholder}
         onAttachFile={handleAttachFile}
         attaching={attaching}
+        attachments={attachments}
+        onRemoveAttachment={removeAttachment}
       />
     </div>
   );

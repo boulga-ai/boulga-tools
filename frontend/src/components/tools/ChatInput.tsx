@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, type ChangeEvent, type KeyboardEvent, type ReactNode } from "react";
-import { ArrowUp, Loader2, Paperclip, Square, Settings2 } from "lucide-react";
+import { ArrowUp, FileText, Loader2, Paperclip, Square, Settings2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -28,6 +28,11 @@ export function ChatInput({
   onAttachFile,
   attaching,
   attachAccept = ".pdf,.docx,.txt",
+  // Fichiers déjà extraits en attente d'envoi, affichés en cartes retirables
+  // au-dessus du champ (comme Claude) — jamais le texte extrait lui-même, qui reste
+  // invisible ici (voir DocumentWorkspace.attachments/composeUserMessage).
+  attachments,
+  onRemoveAttachment,
 }: {
   onSend: (message: string) => void;
   placeholder?: string;
@@ -42,6 +47,8 @@ export function ChatInput({
   onAttachFile?: (file: File) => void;
   attaching?: boolean;
   attachAccept?: string;
+  attachments?: { id: string; name: string }[];
+  onRemoveAttachment?: (id: string) => void;
 }) {
   const [internalValue, setInternalValue] = useState("");
   const value = controlledValue ?? internalValue;
@@ -57,7 +64,8 @@ export function ChatInput({
 
   function submit() {
     const trimmed = value.trim();
-    if (!trimmed || disabled || isStreaming) return;
+    const hasAttachments = (attachments?.length ?? 0) > 0;
+    if ((!trimmed && !hasAttachments) || disabled || isStreaming) return;
     onSend(trimmed);
     if (clearOnSend) setValue("");
   }
@@ -76,6 +84,27 @@ export function ChatInput({
         className,
       )}
     >
+      {attachments && attachments.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {attachments.map((a) => (
+            <span
+              key={a.id}
+              className="flex max-w-[220px] items-center gap-1.5 rounded-[8px] border bg-muted px-2 py-1 text-xs"
+            >
+              <FileText className="size-3.5 shrink-0 text-muted-foreground" />
+              <span className="truncate">{a.name}</span>
+              <button
+                type="button"
+                onClick={() => onRemoveAttachment?.(a.id)}
+                aria-label={`Retirer ${a.name}`}
+                className="shrink-0 text-muted-foreground hover:text-erreur"
+              >
+                <X className="size-3.5" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       <textarea
         ref={textareaRef}
         value={value}
@@ -148,7 +177,7 @@ export function ChatInput({
             <Square className="size-4" />
           </Button>
         ) : (
-          value.trim().length > 0 && (
+          (value.trim().length > 0 || (attachments?.length ?? 0) > 0) && (
             <Button
               type="button"
               size="icon-sm"
