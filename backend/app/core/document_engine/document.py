@@ -88,3 +88,33 @@ def blocks_from_raw(doc_type: str, raw_blocks: list[dict], template: str | None 
         if block is not None and block.type in allowed:
             blocks.append(block)
     return blocks
+
+
+# Photo/logo uploade par le user (bucket Storage "uploads") : jamais renseignee par
+# le LLM lui-meme (aucun acces a un fichier reel) — rattachee au bloc pertinent APRES
+# generation (set_photo_path, documents_engine.py) et relue au moment du rendu
+# .docx (get_photo_path, documents.py) pour telecharger les octets. cover_letter n'a
+# volontairement pas d'entree : pas de bloc contact ni cover_page dans son vocabulaire.
+PHOTO_BLOCK_TYPE: dict[str, str] = {"cv": "contact", "pro_doc": "cover_page", "academic": "cover_page"}
+
+
+def set_photo_path(doc_type: str, document: Document, photo_path: str | None) -> None:
+    """Mute le document en place. Sans effet si photo_path est vide ou si doc_type
+    n'a pas de bloc pertinent."""
+    target_type = PHOTO_BLOCK_TYPE.get(doc_type)
+    if not photo_path or target_type is None:
+        return
+    for block in document.blocks:
+        if block.type == target_type:
+            block.photo_path = photo_path
+            return
+
+
+def get_photo_path(doc_type: str, document: Document) -> str | None:
+    target_type = PHOTO_BLOCK_TYPE.get(doc_type)
+    if target_type is None:
+        return None
+    for block in document.blocks:
+        if block.type == target_type:
+            return getattr(block, "photo_path", None)
+    return None

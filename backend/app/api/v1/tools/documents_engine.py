@@ -13,7 +13,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.config import settings
 from app.core.document_engine.blocks import DOCUMENT_SCHEMAS
-from app.core.document_engine.document import Document, validate_document
+from app.core.document_engine.document import Document, set_photo_path, validate_document
 from app.core.documents import insert_document_draft, update_document_content
 from app.core.llm.client import OpenRouterError, complete_json, compute_cost, stream_blocks
 from app.core.llm.prompts.doc_engine import build_messages, build_segment_messages
@@ -21,6 +21,7 @@ from app.core.llm.router import ModelNotAvailableError, resolve_model
 from app.core.rate_limit import rate_limit_dep
 from app.core.usage import log_usage
 from app.dependencies import get_current_user, get_current_user_with_tier
+from app.utils.storage import create_signed_url, upload_file
 from app.utils.text_extraction import ExtractionError, extract_text
 
 router = APIRouter(prefix="/documents", tags=["documents_engine"], dependencies=[Depends(rate_limit_dep)])
@@ -47,6 +48,18 @@ DOC_TYPE_TOOL: dict[str, str] = {
 _SEGMENT_MAX_TOKENS = 8_000
 _FULL_DOC_MAX_TOKENS = 16_000
 
+# Photo/logo uploade avant generation (voir /upload-photo) : jamais transmise au LLM
+# (qui n'a acces a aucun fichier reel) — injectee directement dans le bloc concerne
+# une fois le document valide, voir set_photo_path (document.py, partage avec
+# documents.py qui la relit au moment du rendu .docx).
+_PHOTO_MAX_BYTES = 5 * 1024 * 1024  # 5 Mo
+_PHOTO_CONTENT_TYPES = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
+# Assez long pour une session de travail (upload, puis plusieurs generations/ajustements
+# avant de televerger) — plus court que la retention du bucket (30j) : c'est normal,
+# l'URL n'a besoin de rester valide que pour l'apercu live, pas pour la duree de vie du
+# fichier lui-meme (voir render_document, qui retelecharge les octets a chaque rendu).
+_PHOTO_URL_TTL = 2 * 60 * 60
+
 
 class PlanItem(BaseModel):
     heading: str
@@ -70,6 +83,9 @@ class DocEngineContext(BaseModel):
     competence: Literal["standard", "expert"] = "standard"
     depth: Literal["essentiel", "detaille", "tres_detaille"] = "detaille"
     template: str | None = None
+    # Chemin Storage (bucket "uploads") d'une photo/logo deja televersee via
+    # /documents/upload-photo — jamais une URL. Voir document.set_photo_path.
+    photo_path: str | None = None
 
 
 class AnalyzeRequest(BaseModel):
@@ -117,6 +133,27 @@ async def extract_document_text(file: UploadFile, user: dict = Depends(get_curre
     except ExtractionError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     return {"text": text}
+
+
+@router.post("/upload-photo")
+async def upload_document_photo(file: UploadFile, user: dict = Depends(get_current_user)) -> dict:
+    """Televerse une photo (CV) ou un logo/photo de couverture (document pro/
+    academique) vers le bucket 'uploads' — jamais fournie au LLM, seulement
+    rattachee au document apres generation (voir DocEngineContext.photo_path et
+    document.set_photo_path). Renvoie le chemin (a renvoyer tel quel dans photo_path)
+    et une URL signee (juste pour l'apercu immediat cote frontend)."""
+    content = await file.read()
+    if len(content) > _PHOTO_MAX_BYTES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image trop volumineuse (5 Mo max).")
+    ext = _PHOTO_CONTENT_TYPES.get(file.content_type or "")
+    if ext is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Format non supporte (JPEG, PNG ou WebP uniquement)."
+        )
+    path = f"{user['user_id']}/{uuid.uuid4()}.{ext}"
+    upload_file("uploads", path, content, file.content_type or "application/octet-stream")
+    url = create_signed_url("uploads", path, _PHOTO_URL_TTL)
+    return {"path": path, "url": url}
 
 
 @router.post("/{doc_type}/analyze")
@@ -216,6 +253,7 @@ async def generate_document(
             document = validate_document(
                 doc_type, {"blocks": blocks, "meta": body.context.cadrage}, body.context.template
             )
+            set_photo_path(doc_type, document, body.context.photo_path)
             title = _infer_title(doc_type, document, body.context.cadrage)
             if not persisted:
                 insert_document_draft(document_id, user["user_id"], doc_type, title, document.model_dump(mode="json"))
@@ -336,6 +374,7 @@ async def generate_document(
             document = validate_document(
                 doc_type, {"blocks": raw_blocks, "meta": body.context.cadrage}, body.context.template
             )
+            set_photo_path(doc_type, document, body.context.photo_path)
             title = _infer_title(doc_type, document, body.context.cadrage)
 
         yield {

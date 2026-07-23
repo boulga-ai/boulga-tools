@@ -62,6 +62,8 @@ export default function CVWriterPage() {
             storageKey="boulga:workspace:cv"
             templateConditionsContent
             newDocumentLabel="Nouveau CV"
+            photoUpload
+            photoLabel="Photo (optionnel)"
             cadrageFields={[
               { key: "full_name", label: "Nom complet" },
               { key: "email", label: "Email", type: "email" },

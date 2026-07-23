@@ -3,7 +3,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.core.document_engine.document import validate_document
+from app.core.document_engine.document import get_photo_path, validate_document
 from app.core.document_engine.palette import validate_palette_color
 from app.core.document_engine.pdf import PdfConversionError, docx_to_pdf
 from app.core.document_engine.renderer import RendererError, render
@@ -18,7 +18,7 @@ from app.core.quota import consume_download
 from app.dependencies import check_quota_dep, get_current_user
 from app.models.documents import RenderRequest
 from app.utils.filenames import safe_stem
-from app.utils.storage import create_signed_url, delete_file, upload_file
+from app.utils.storage import create_signed_url, delete_file, download_file, upload_file
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -116,11 +116,29 @@ async def render_document(
     accent_override = validate_palette_color(body.accent_color)
     dark_override = validate_palette_color(body.dark_color)
 
+    # Photo/logo deja rattachee au bloc contact/cover_page (voir document.set_photo_path,
+    # appelee a la generation) : retelecharge les octets a CHAQUE rendu plutot que de les
+    # persister a part — best-effort, une photo introuvable/supprimee (retention 30j du
+    # bucket "uploads") ne doit jamais empecher le reste du document de se rendre.
+    photo_path = get_photo_path(doc_type, engine_document)
+    photo_bytes = None
+    if photo_path:
+        try:
+            photo_bytes = download_file("uploads", photo_path)
+        except Exception:
+            photo_bytes = None
+
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
         try:
             docx_path = render(
-                engine_document, body.template, user["tier"], tmp_path, accent_override, dark_override
+                engine_document,
+                body.template,
+                user["tier"],
+                tmp_path,
+                accent_override,
+                dark_override,
+                photo_bytes,
             )
         except RendererError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))

@@ -60,6 +60,7 @@ export function PageResultCard({
   onAccentColorChange,
   onDarkColorChange,
   onDelete,
+  photoPreviewUrl,
 }: {
   documentId: string | null;
   title: string;
@@ -73,6 +74,9 @@ export function PageResultCard({
   onAccentColorChange: (hex: string | undefined) => void;
   onDarkColorChange: (hex: string | undefined) => void;
   onDelete: () => void;
+  // URL signee (apercu seulement) d'une photo/logo deja televerse pour ce projet —
+  // voir PhotoUpload/DocumentWorkspace. La meme pour toutes les cartes du projet.
+  photoPreviewUrl?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [format, setFormat] = useState<"docx" | "pdf">("pdf");
@@ -122,6 +126,7 @@ export function PageResultCard({
               template={template}
               accentColorOverride={accentColor}
               darkColorOverride={darkColor}
+              photoPreviewUrl={photoPreviewUrl}
             />
           </div>
           <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-white to-transparent" />
@@ -192,6 +197,7 @@ export function PageResultCard({
               template={template}
               accentColorOverride={accentColor}
               darkColorOverride={darkColor}
+              photoPreviewUrl={photoPreviewUrl}
               tocLinks
             />
           </div>

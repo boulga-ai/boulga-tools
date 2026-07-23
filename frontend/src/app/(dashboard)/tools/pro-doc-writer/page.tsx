@@ -265,6 +265,8 @@ export default function ProDocWriterPage() {
             disableLocalStorage
             templateUpfront
             newDocumentLabel="Nouveau document"
+            photoUpload
+            photoLabel="Logo ou photo de couverture (optionnel)"
             projectsControl={
               session
                 ? {

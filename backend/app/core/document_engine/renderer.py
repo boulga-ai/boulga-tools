@@ -6,6 +6,7 @@ qui relisaient chacun les champs d'un schema Content fige.
 
 AUCUNE regex, AUCUN parsing texte : uniquement les champs types des blocs Pydantic."""
 
+import io
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
@@ -179,6 +180,19 @@ def available_templates(doc_type: str | None = None) -> list[str]:
     return sorted(name for name, style in TEMPLATE_STYLES.items() if style.doc_type == doc_type)
 
 
+def _add_picture_safe(container: Container, photo_bytes: bytes, width_cm: float, alignment) -> None:
+    """Insere une photo/logo dans son propre paragraphe — jamais bloquant : une image
+    corrompue ou dans un format que python-docx ne sait pas lire ne doit jamais faire
+    echouer tout le rendu du document (voir documents.py render_document, qui
+    telecharge ces octets depuis le bucket Storage avant d'appeler render)."""
+    try:
+        p = container.add_paragraph()
+        p.alignment = alignment
+        p.add_run().add_picture(io.BytesIO(photo_bytes), width=Cm(width_cm))
+    except Exception:
+        pass
+
+
 # --- Socle commun : rendu dans le document directement (jamais dans une cellule, pour
 # beneficier des styles Heading natifs de Word, necessaires au champ TOC) -----------
 
@@ -253,7 +267,9 @@ def _render_bibliography(doc: DocxDocument, block, style: TemplateStyle) -> None
         doc.add_paragraph(entry, style="List Bullet")
 
 
-def _render_cover_page_banner(doc: DocxDocument, block, richness: Richness, style: TemplateStyle) -> None:
+def _render_cover_page_banner(
+    doc: DocxDocument, block, richness: Richness, style: TemplateStyle, photo_bytes: bytes | None
+) -> None:
     """pro_corporate/pro_moderne : bandeau colore pleine largeur, poursuit directement
     dans le contenu (pas de saut de page — le bandeau tient lieu d'en-tete de premiere
     page)."""
@@ -276,14 +292,18 @@ def _render_cover_page_banner(doc: DocxDocument, block, richness: Richness, styl
     meta_run.font.color.rgb = BLANC
     meta_p.paragraph_format.space_after = Pt(14)
     doc.add_paragraph()
+    if photo_bytes:
+        _add_picture_safe(doc, photo_bytes, 3.5, WD_ALIGN_PARAGRAPH.CENTER)
 
 
-def _render_cover_page_minimal(doc: DocxDocument, block, style: TemplateStyle) -> None:
+def _render_cover_page_minimal(doc: DocxDocument, block, style: TemplateStyle, photo_bytes: bytes | None) -> None:
     """pro_minimal : page de titre dediee mais sobre — pas de bloc couleur, juste le
     titre et les metadonnees centres, sur leur propre page (au lieu de n'avoir aucune
     page de garde comme avant : chaque template pro_doc en a desormais une)."""
     for _ in range(6):
         doc.add_paragraph()
+    if photo_bytes:
+        _add_picture_safe(doc, photo_bytes, 3, WD_ALIGN_PARAGRAPH.CENTER)
     title_p = doc.add_paragraph()
     title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     title_run = title_p.add_run(block.title)
@@ -303,7 +323,7 @@ def _render_cover_page_minimal(doc: DocxDocument, block, style: TemplateStyle) -
     doc.add_page_break()
 
 
-def _render_cover_page_academic(doc: DocxDocument, block, style: TemplateStyle) -> None:
+def _render_cover_page_academic(doc: DocxDocument, block, style: TemplateStyle, photo_bytes: bytes | None) -> None:
     """academic_formal / academic_clean / academic_classique : page de garde
     academique classique centree — seule differe la marge de reliure, deja geree au
     niveau section (style.margins_cm), pas ici."""
@@ -313,6 +333,9 @@ def _render_cover_page_academic(doc: DocxDocument, block, style: TemplateStyle) 
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         p.add_run(block.institution).font.size = Pt(13)
+        doc.add_paragraph()
+    if photo_bytes:
+        _add_picture_safe(doc, photo_bytes, 3, WD_ALIGN_PARAGRAPH.CENTER)
         doc.add_paragraph()
 
     title_p = doc.add_paragraph()
@@ -343,13 +366,15 @@ def _render_cover_page_academic(doc: DocxDocument, block, style: TemplateStyle) 
     doc.add_page_break()
 
 
-def _render_cover_page(doc: DocxDocument, block, style: TemplateStyle, richness: Richness) -> None:
+def _render_cover_page(
+    doc: DocxDocument, block, style: TemplateStyle, richness: Richness, photo_bytes: bytes | None
+) -> None:
     if style.cover_page_style == "banner":
-        _render_cover_page_banner(doc, block, richness, style)
+        _render_cover_page_banner(doc, block, richness, style, photo_bytes)
     elif style.cover_page_style == "minimal":
-        _render_cover_page_minimal(doc, block, style)
+        _render_cover_page_minimal(doc, block, style, photo_bytes)
     else:  # "formal" ou "clean" — meme composition academique
-        _render_cover_page_academic(doc, block, style)
+        _render_cover_page_academic(doc, block, style, photo_bytes)
 
 
 # --- Blocs lettre --------------------------------------------------------------------
@@ -447,9 +472,24 @@ def _bullet_indent(paragraph) -> None:
     paragraph.paragraph_format.first_line_indent = Cm(-0.45)
 
 
-def _render_contact(container: Container, block, richness: Richness, style: TemplateStyle, *, white_text: bool) -> None:
+def _render_contact(
+    container: Container,
+    block,
+    richness: Richness,
+    style: TemplateStyle,
+    *,
+    white_text: bool,
+    photo_bytes: bytes | None = None,
+) -> None:
     dark = RGBColor.from_string(style.dark_hex)
     accent = RGBColor.from_string(style.accent_hex)
+
+    if photo_bytes:
+        # Centree dans la colonne laterale (sidebar, etroite) ; alignee a droite dans
+        # une mise en page classique une colonne, pour laisser le nom/titre a gauche.
+        _add_picture_safe(
+            container, photo_bytes, 2.8, WD_ALIGN_PARAGRAPH.CENTER if white_text else WD_ALIGN_PARAGRAPH.RIGHT
+        )
 
     name_p = container.add_paragraph()
     name_run = name_p.add_run(block.full_name or "—")
@@ -680,10 +720,16 @@ def _append_cv_tagline(container: Container, richness: Richness, style: Template
 
 
 def _dispatch_cv_block(
-    container: Container, block, richness: Richness, style: TemplateStyle, *, white_text: bool
+    container: Container,
+    block,
+    richness: Richness,
+    style: TemplateStyle,
+    *,
+    white_text: bool,
+    photo_bytes: bytes | None = None,
 ) -> None:
     if block.type == "contact":
-        _render_contact(container, block, richness, style, white_text=white_text)
+        _render_contact(container, block, richness, style, white_text=white_text, photo_bytes=photo_bytes)
         return
     if block.type == "heading":
         _render_heading_in_container(container, block, style, white_text=white_text)
@@ -693,13 +739,17 @@ def _dispatch_cv_block(
         renderer(container, block, white_text=white_text)
 
 
-def _render_cv_classic(doc: DocxDocument, blocks: list[Block], richness: Richness, style: TemplateStyle) -> None:
+def _render_cv_classic(
+    doc: DocxDocument, blocks: list[Block], richness: Richness, style: TemplateStyle, photo_bytes: bytes | None
+) -> None:
     for block in blocks:
-        _dispatch_cv_block(doc, block, richness, style, white_text=False)
+        _dispatch_cv_block(doc, block, richness, style, white_text=False, photo_bytes=photo_bytes)
     _append_cv_tagline(doc, richness, style, white_text=False)
 
 
-def _render_cv_sidebar(doc: DocxDocument, blocks: list[Block], richness: Richness, style: TemplateStyle) -> None:
+def _render_cv_sidebar(
+    doc: DocxDocument, blocks: list[Block], richness: Richness, style: TemplateStyle, photo_bytes: bytes | None
+) -> None:
     section = doc.sections[0]
     section.left_margin = Cm(0)
     section.right_margin = Cm(0)
@@ -729,14 +779,16 @@ def _render_cv_sidebar(doc: DocxDocument, blocks: list[Block], richness: Richnes
     sidebar_types = {"contact", "skill_group", "language_group"}
     for block in blocks:
         target, white_text = (left, True) if block.type in sidebar_types else (right, False)
-        _dispatch_cv_block(target, block, richness, style, white_text=white_text)
+        _dispatch_cv_block(target, block, richness, style, white_text=white_text, photo_bytes=photo_bytes)
     _append_cv_tagline(left, richness, style, white_text=True)
 
 
 # --- Dispatch generique (documents pro/academique/lettre — rendu direct dans doc) ----
 
 
-def _render_linear(doc: DocxDocument, blocks: list[Block], style: TemplateStyle, richness: Richness) -> None:
+def _render_linear(
+    doc: DocxDocument, blocks: list[Block], style: TemplateStyle, richness: Richness, photo_bytes: bytes | None
+) -> None:
     counters = [0, 0, 0, 0]
     for block in blocks:
         if block.type == "heading":
@@ -765,7 +817,7 @@ def _render_linear(doc: DocxDocument, blocks: list[Block], style: TemplateStyle,
         elif block.type == "page_break":
             doc.add_page_break()
         elif block.type == "cover_page":
-            _render_cover_page(doc, block, style, richness)
+            _render_cover_page(doc, block, style, richness, photo_bytes)
         elif block.type == "table_of_contents":
             _render_toc(doc, richness, style)
         elif block.type == "bibliography":
@@ -787,6 +839,10 @@ def render(
     output_dir: Path,
     accent_override: str | None = None,
     dark_override: str | None = None,
+    # Octets deja telecharges par l'appelant (voir documents.py render_document) a
+    # partir du photo_path du bloc contact/cover_page concerne — le renderer ne fait
+    # lui-meme aucun acces reseau/Storage, uniquement de l'embarquement d'image.
+    photo_bytes: bytes | None = None,
 ) -> Path:
     style = TEMPLATE_STYLES.get(template_name)
     if style is None:
@@ -816,11 +872,11 @@ def render(
     section.bottom_margin = Cm(bottom)
 
     if document.doc_type == "cv" and style.cv_sidebar:
-        _render_cv_sidebar(doc, document.blocks, richness, style)
+        _render_cv_sidebar(doc, document.blocks, richness, style, photo_bytes)
     elif document.doc_type == "cv":
-        _render_cv_classic(doc, document.blocks, richness, style)
+        _render_cv_classic(doc, document.blocks, richness, style, photo_bytes)
     else:
-        _render_linear(doc, document.blocks, style, richness)
+        _render_linear(doc, document.blocks, style, richness, photo_bytes)
 
     has_pagination_context = style.cover_page_style is not None or any(
         b.type == "table_of_contents" for b in document.blocks

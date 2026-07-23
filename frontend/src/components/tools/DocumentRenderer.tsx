@@ -23,6 +23,7 @@ function BlockView({
   isCv,
   headings,
   tocLinks,
+  photoPreviewUrl,
 }: {
   block: DocBlock;
   index: number;
@@ -33,6 +34,10 @@ function BlockView({
   isCv: boolean;
   headings: { text: string; level: number; anchor: string }[];
   tocLinks: boolean;
+  // URL signee (apercu seulement, jamais envoyee au backend) d'une photo/logo deja
+  // televerse — voir PhotoUpload/DocumentWorkspace. Affichee uniquement sur le bloc
+  // contact (cv) ou cover_page (pro_doc/academic), miroir du .docx (renderer.py).
+  photoPreviewUrl?: string;
 }) {
   switch (block.type) {
     case "heading": {
@@ -135,6 +140,10 @@ function BlockView({
       ].filter(Boolean);
       return (
         <div>
+          {photoPreviewUrl && (
+            // eslint-disable-next-line @next/next/no-img-element -- URL signee externe (Supabase Storage)
+            <img src={photoPreviewUrl} alt="" className="mb-2 size-16 rounded-full object-cover" />
+          )}
           <h2 className="text-xl font-semibold" style={{ color: darkHex }}>
             {asStr(block.full_name) || "—"}
           </h2>
@@ -265,11 +274,19 @@ function BlockView({
           <div className="-m-5 mb-2 flex flex-col gap-1 px-5 py-6 text-white" style={{ backgroundColor: accentHex }}>
             <h2 className="text-2xl font-semibold">{asStr(block.title)}</h2>
             {metaBits.length > 0 ? <p className="text-sm text-white/85">{metaBits.join(" | ")}</p> : null}
+            {photoPreviewUrl && (
+              // eslint-disable-next-line @next/next/no-img-element -- URL signee externe (Supabase Storage)
+              <img src={photoPreviewUrl} alt="" className="mt-2 h-12 w-auto rounded-[4px] object-contain" />
+            )}
           </div>
         );
       }
       return (
         <div className="flex flex-col items-center gap-1 py-8 text-center">
+          {photoPreviewUrl && (
+            // eslint-disable-next-line @next/next/no-img-element -- URL signee externe (Supabase Storage)
+            <img src={photoPreviewUrl} alt="" className="mb-2 h-16 w-auto object-contain" />
+          )}
           <h2 className="text-2xl font-semibold" style={{ color: darkHex }}>
             {asStr(block.title)}
           </h2>
@@ -334,12 +351,16 @@ function BlockView({
 // Variante sidebar (CV moderne) des 3 blocs autorises dans la colonne sombre — memes
 // types que CV_SIDEBAR_BLOCK_TYPES (lib/template-styles.ts), qui doit rester
 // synchronise avec sidebar_types cote backend (renderer.py, _render_cv_sidebar).
-function SidebarBlockView({ block }: { block: DocBlock }) {
+function SidebarBlockView({ block, photoPreviewUrl }: { block: DocBlock; photoPreviewUrl?: string }) {
   switch (block.type) {
     case "contact": {
       const bits = [asStr(block.email), asStr(block.phone), asStr(block.address), asStr(block.linkedin)].filter(Boolean);
       return (
         <div>
+          {photoPreviewUrl && (
+            // eslint-disable-next-line @next/next/no-img-element -- URL signee externe (Supabase Storage)
+            <img src={photoPreviewUrl} alt="" className="mx-auto mb-2 size-16 rounded-full object-cover" />
+          )}
           <h2 className="text-lg font-semibold text-white">{asStr(block.full_name) || "—"}</h2>
           {block.title ? <p className="text-sm text-white/85">{asStr(block.title)}</p> : null}
           <div className="mt-1 flex flex-col gap-0.5">
@@ -387,6 +408,7 @@ export function DocumentRenderer({
   accentColorOverride,
   darkColorOverride,
   tocLinks = false,
+  photoPreviewUrl,
 }: {
   blocks: DocBlock[];
   template?: string;
@@ -403,6 +425,11 @@ export function DocumentRenderer({
   // miniature de carte qui reste montee en parallele avec les memes blocs (sinon
   // ids dupliques dans le DOM).
   tocLinks?: boolean;
+  // URL signee (apercu seulement) d'une photo/logo deja televerse — voir
+  // PhotoUpload/DocumentWorkspace. Jamais derivee des blocs eux-memes (qui ne
+  // portent qu'un chemin Storage prive, pas affichable directement) : c'est le
+  // parent qui la fournit, la meme pour toutes les cartes du projet en cours.
+  photoPreviewUrl?: string;
 }) {
   const baseStyle = getTemplateStyle(template);
   const style = {
@@ -434,7 +461,7 @@ export function DocumentRenderer({
       <div className={cn("flex overflow-hidden rounded-[12px] border", className)} style={{ fontFamily: style.fontFamily }}>
         <div className="flex w-[38%] shrink-0 flex-col gap-1.5 p-4" style={{ backgroundColor: style.darkHex }}>
           {sidebarBlocks.map((block, i) => (
-            <SidebarBlockView key={i} block={block} />
+            <SidebarBlockView key={i} block={block} photoPreviewUrl={photoPreviewUrl} />
           ))}
         </div>
         <div className="flex flex-1 flex-col gap-1.5 bg-card p-5">
@@ -450,6 +477,7 @@ export function DocumentRenderer({
               isCv={isCv}
               headings={headings}
               tocLinks={tocLinks}
+              photoPreviewUrl={photoPreviewUrl}
             />
           ))}
         </div>
@@ -474,6 +502,7 @@ export function DocumentRenderer({
           isCv={isCv}
           headings={headings}
           tocLinks={tocLinks}
+          photoPreviewUrl={photoPreviewUrl}
         />
       ))}
     </div>

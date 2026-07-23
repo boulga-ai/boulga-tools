@@ -261,6 +261,8 @@ export default function AcademicWriterPage() {
             disableLocalStorage
             templateUpfront
             newDocumentLabel="Nouveau document"
+            photoUpload
+            photoLabel="Logo ou photo de couverture (optionnel)"
             projectsControl={
               session
                 ? {

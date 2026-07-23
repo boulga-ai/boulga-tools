@@ -21,6 +21,7 @@ import { MarkdownContent } from "@/components/tools/MarkdownContent";
 import { DocumentRenderer } from "@/components/tools/DocumentRenderer";
 import { GenerationError } from "@/components/tools/GenerationError";
 import { PageResultCard } from "@/components/tools/PageResultCard";
+import { PhotoUpload } from "@/components/tools/PhotoUpload";
 import { TemplateSelector, type TemplateOption } from "@/components/tools/TemplateSelector";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -171,6 +172,13 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   newDocumentLabel?: string;
   // pro_doc/academic uniquement — voir le type ProjectsControl ci-dessus.
   projectsControl?: ProjectsControl;
+  // cv (photo) / pro_doc/academic (logo ou photo de couverture) — jamais
+  // cover_letter. Affiche le composant PhotoUpload dans leftPanel ; le chemin
+  // uploade vit dans cadrage.photo_path (persiste comme le reste du cadrage) mais
+  // en est extrait avant l'envoi au LLM (voir buildContext) pour rejoindre le champ
+  // dedie DocEngineContext.photo_path — jamais fourni au LLM comme texte de contexte.
+  photoUpload?: boolean;
+  photoLabel?: string;
 }>(function DocumentWorkspace({
   docType,
   storageKey,
@@ -187,6 +195,8 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   templateUpfront = false,
   newDocumentLabel,
   projectsControl,
+  photoUpload = false,
+  photoLabel = "Photo (optionnel)",
 }, ref) {
   const [restored] = useState<Partial<WorkState>>(() =>
     disableLocalStorage ? (initialState ?? {}) : (loadState(storageKey) ?? initialState ?? {}),
@@ -232,6 +242,11 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   } = useBlockStream();
   const [template, setTemplate] = useState(templates[0]?.value ?? "");
   const [attaching, setAttaching] = useState(false);
+  // Purement cosmetique (URL signee, affichage seulement) — jamais envoyee au
+  // backend ni persistee : seul cadrage.photo_path (le chemin Storage) doit
+  // survivre. Un rechargement de page perd cette preview (le composant retombe sur
+  // "Photo ajoutée" sans vignette) mais jamais le chemin lui-meme.
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | undefined>(undefined);
   const [recovering, setRecovering] = useState(false);
   // Tentative de reconnexion automatique (voir l'effet plus bas) : le user ne voit
   // jamais l'erreur "seche" tant que ces essais courent, seulement un indicateur de
@@ -294,11 +309,12 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
   }, [disableLocalStorage, storageKey, archivedProjects]);
 
   function buildContext(extra?: Partial<DocEngineContext>): DocEngineContext {
-    // "competence" et "depth" vivent dans le cadrage cote UI (memes selecteurs
-    // compacts que type/domaine) mais sont des champs a part dans le contexte
-    // envoye au backend — on les en extrait plutot que de les dupliquer dans le
-    // JSON de cadrage transmis au LLM.
-    const { competence, depth, ...restCadrage } = cadrage;
+    // "competence"/"depth"/"photo_path" vivent dans le cadrage cote UI (memes
+    // selecteurs compacts que type/domaine, meme persistance) mais sont des champs a
+    // part dans le contexte envoye au backend — on les en extrait plutot que de les
+    // dupliquer dans le JSON de cadrage transmis au LLM (photo_path en particulier
+    // n'a aucun sens comme texte de contexte : un chemin Storage opaque).
+    const { competence, depth, photo_path, ...restCadrage } = cadrage;
     return {
       cadrage: restCadrage,
       history,
@@ -309,6 +325,7 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
       competence: (competence as DocEngineContext["competence"]) || undefined,
       depth: (depth as DocEngineContext["depth"]) || undefined,
       template: template || undefined,
+      photo_path: photo_path || undefined,
       ...extra,
     };
   }
@@ -773,6 +790,7 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
               template={item.template}
               accentColor={item.accentColor}
               darkColor={item.darkColor}
+              photoPreviewUrl={photoPreviewUrl}
               onAccentColorChange={(hex) =>
                 setResults((prev) => prev.map((r) => (r.id === item.id ? { ...r, accentColor: hex } : r)))
               }
@@ -787,7 +805,7 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
         {isStreaming && (
           <div className="mx-auto flex w-full max-w-[800px] flex-col gap-1.5">
             <div className="relative aspect-[210/297] w-full overflow-hidden rounded-[10px] border bg-white p-4 shadow-sm">
-              <DocumentRenderer blocks={blocks} template={template} />
+              <DocumentRenderer blocks={blocks} template={template} photoPreviewUrl={photoPreviewUrl} />
             </div>
             {generationStatus}
             {generationProgressBar}
@@ -954,6 +972,23 @@ export const DocumentWorkspace = forwardRef<DocumentWorkspaceHandle, {
             </div>
           ))}
         </div>
+      )}
+
+      {photoUpload && (
+        <PhotoUpload
+          label={photoLabel}
+          photoPath={cadrage.photo_path}
+          previewUrl={photoPreviewUrl}
+          onChange={(photoPath, previewUrl) => {
+            setCadrage((prev) => {
+              if (photoPath) return { ...prev, photo_path: photoPath };
+              const rest = { ...prev };
+              delete rest.photo_path;
+              return rest;
+            });
+            setPhotoPreviewUrl(previewUrl);
+          }}
+        />
       )}
 
       {/* Fil de chat — s'empile, rien n'est jamais effacé */}

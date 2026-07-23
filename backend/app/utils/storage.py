@@ -9,6 +9,11 @@ def upload_file(bucket: str, path: str, content: bytes, content_type: str) -> No
     )
 
 
+def download_file(bucket: str, path: str) -> bytes:
+    client = get_service_client()
+    return client.storage.from_(bucket).download(path)
+
+
 def create_signed_url(
     bucket: str, path: str, expires_in_seconds: int, download_filename: str | None = None
 ) -> str:

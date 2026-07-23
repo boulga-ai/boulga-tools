@@ -66,6 +66,11 @@ export type DocEngineContext = {
   // (voir backend blocks.TEMPLATE_OVERRIDES) — pour pro_doc/academic, ignoré par le
   // backend (habillage pur, décidé au rendu seulement).
   template?: string;
+  // Chemin Storage (bucket "uploads", voir PhotoUpload) d'une photo/logo déjà
+  // téléversée — jamais une URL. Rattaché après génération au bloc contact (cv) ou
+  // cover_page (pro_doc/academic) ; ignoré pour cover_letter (voir backend
+  // document.PHOTO_BLOCK_TYPE). Jamais fourni au LLM comme texte de contexte.
+  photo_path?: string;
 };
 
 export type WorkState = {

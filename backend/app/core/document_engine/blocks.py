@@ -65,7 +65,12 @@ class ContactBlock(BaseModel):
     linkedin: str | None = None
     # Champs optionnels utilises par certains templates seulement (ex: cv_concours) —
     # ignores silencieusement au rendu si absents, jamais requis par les autres.
-    photo_url: str | None = None
+    # photo_path : chemin dans le bucket Storage "uploads" ({user_id}/{uuid}.ext),
+    # jamais une URL — le LLM ne le renseigne jamais lui-meme (il n'a acces a aucun
+    # fichier reel) : injecte apres coup depuis DocEngineContext.photo_path
+    # (documents_engine.py generate_document), a partir d'une photo deja uploadee par
+    # le user avant generation. Voir renderer.py pour l'embarquement dans le .docx.
+    photo_path: str | None = None
     birth_date: str | None = None
     birth_place: str | None = None
     nationality: str | None = None
@@ -150,6 +155,9 @@ class CoverPageBlock(BaseModel):
     # Champs libres additionnels (ex: organisation, encadreur secondaire...). Les cles
     # vides ou absentes sont simplement ignorees au rendu — jamais bloquant.
     extra: dict[str, str] = Field(default_factory=dict)
+    # Logo ou photo de couverture (document pro/academique) — meme convention que
+    # ContactBlock.photo_path : un chemin Storage, jamais rempli par le LLM lui-meme.
+    photo_path: str | None = None
 
 
 class TableOfContentsBlock(BaseModel):
