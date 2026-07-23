@@ -13,8 +13,11 @@ from typing import Literal
 
 from docx.document import Document as DocxDocument
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 from docx.table import _Cell
+from PIL import Image
 
 from app.core.document_engine.blocks import Block
 from app.core.document_engine.document import Document as EngineDocument
@@ -180,15 +183,58 @@ def available_templates(doc_type: str | None = None) -> list[str]:
     return sorted(name for name, style in TEMPLATE_STYLES.items() if style.doc_type == doc_type)
 
 
-def _add_picture_safe(container: Container, photo_bytes: bytes, width_cm: float, alignment) -> None:
+def _crop_to_circle(picture, photo_bytes: bytes) -> None:
+    """Rogne l'image source au centre en carre (comme object-cover en CSS, que
+    l'apercu web utilise pour ce meme bloc) puis force une geometrie ellipse — un
+    cercle net puisque le cadrage est deja carre, jamais un ovale etire. Sans ce
+    recadrage prealable, forcer une geometrie ellipse sur une image non carree
+    (portrait ou paysage) donnerait un ovale deforme au lieu d'un cercle propre.
+    python-docx n'expose ni le recadrage ni la geometrie : manipulation XML directe
+    (memes elements que ceux ecrits par Word lui-meme, verifie par relecture)."""
+    img_width, img_height = Image.open(io.BytesIO(photo_bytes)).size
+    left = top = right = bottom = 0
+    if img_width > img_height:
+        crop_pct = round((1 - img_height / img_width) * 50_000)  # milliemes de % ; moitie de chaque cote
+        left = right = crop_pct
+    elif img_height > img_width:
+        crop_pct = round((1 - img_width / img_height) * 50_000)
+        top = bottom = crop_pct
+
+    pic_el = picture._inline.graphic.graphicData.find(qn("pic:pic"))
+    blip_fill = pic_el.find(qn("pic:blipFill"))
+    blip = blip_fill.find(qn("a:blip"))
+    src_rect = OxmlElement("a:srcRect")
+    if left or right:
+        src_rect.set("l", str(left))
+        src_rect.set("r", str(right))
+    if top or bottom:
+        src_rect.set("t", str(top))
+        src_rect.set("b", str(bottom))
+    blip.addnext(src_rect)
+
+    pic_geom = pic_el.find(qn("pic:spPr")).find(qn("a:prstGeom"))
+    pic_geom.set("prst", "ellipse")
+
+
+def _add_picture_safe(
+    container: Container, photo_bytes: bytes, width_cm: float, alignment, *, circular: bool = False
+) -> None:
     """Insere une photo/logo dans son propre paragraphe — jamais bloquant : une image
-    corrompue ou dans un format que python-docx ne sait pas lire ne doit jamais faire
-    echouer tout le rendu du document (voir documents.py render_document, qui
-    telecharge ces octets depuis le bucket Storage avant d'appeler render)."""
+    corrompue ou dans un format que python-docx/Pillow ne sait pas lire ne doit
+    jamais faire echouer tout le rendu du document (voir documents.py
+    render_document, qui telecharge ces octets depuis le bucket Storage avant
+    d'appeler render). circular=True (photo de contact CV uniquement, jamais le logo
+    de page de garde) : recadre en cercle via _crop_to_circle, avec une largeur ET
+    une hauteur identiques (carre) au lieu de la largeur seule habituelle."""
     try:
         p = container.add_paragraph()
         p.alignment = alignment
-        p.add_run().add_picture(io.BytesIO(photo_bytes), width=Cm(width_cm))
+        run = p.add_run()
+        if circular:
+            picture = run.add_picture(io.BytesIO(photo_bytes), width=Cm(width_cm), height=Cm(width_cm))
+            _crop_to_circle(picture, photo_bytes)
+        else:
+            run.add_picture(io.BytesIO(photo_bytes), width=Cm(width_cm))
     except Exception:
         pass
 
@@ -485,10 +531,16 @@ def _render_contact(
     accent = RGBColor.from_string(style.accent_hex)
 
     if photo_bytes:
-        # Centree dans la colonne laterale (sidebar, etroite) ; alignee a droite dans
-        # une mise en page classique une colonne, pour laisser le nom/titre a gauche.
+        # Centree dans la colonne laterale (sidebar, etroite) ; alignee a gauche dans
+        # une mise en page classique une colonne, juste au-dessus du nom — meme
+        # position que l'apercu web (DocumentRenderer), qui n'aligne jamais a droite.
+        # circular=True : recadree en cercle, jamais un rectangle (voir _crop_to_circle).
         _add_picture_safe(
-            container, photo_bytes, 2.8, WD_ALIGN_PARAGRAPH.CENTER if white_text else WD_ALIGN_PARAGRAPH.RIGHT
+            container,
+            photo_bytes,
+            2.8,
+            WD_ALIGN_PARAGRAPH.CENTER if white_text else WD_ALIGN_PARAGRAPH.LEFT,
+            circular=True,
         )
 
     name_p = container.add_paragraph()
